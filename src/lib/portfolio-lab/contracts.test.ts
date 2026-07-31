@@ -1,8 +1,11 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, expectTypeOf, it, vi } from "vitest";
 
 import {
   PORTFOLIO_LAB_CONTRACT,
   PORTFOLIO_LAB_MODEL_CONTRACT,
+  asPortfolioCaseId,
+  type DrawdownRatioSeries,
+  type NominalWealthSeries,
   type PortfolioCaseDetail,
   type PortfolioLabProblem,
   type PortfolioLabRequest,
@@ -17,6 +20,9 @@ const MARKET_ASSUMPTIONS = {
   correlation: 0.15,
 } as const;
 
+const STANDARD_CASE_ID = asPortfolioCaseId("standard");
+const REGIMES_CASE_ID = asPortfolioCaseId("regimes");
+
 const REQUEST = {
   contract: PORTFOLIO_LAB_CONTRACT.request,
   plan: {
@@ -27,10 +33,10 @@ const REQUEST = {
     annualInflationRate: 0.025,
     targetValue: 1_000_000,
   },
-  primaryCaseId: "regimes",
+  primaryCaseId: REGIMES_CASE_ID,
   cases: [
     {
-      id: "standard",
+      id: STANDARD_CASE_ID,
       label: "Standard Monte Carlo",
       model: {
         contract: PORTFOLIO_LAB_MODEL_CONTRACT.gbm,
@@ -39,7 +45,7 @@ const REQUEST = {
       },
     },
     {
-      id: "regimes",
+      id: REGIMES_CASE_ID,
       label: "Regime switching",
       model: {
         contract: PORTFOLIO_LAB_MODEL_CONTRACT.hmm,
@@ -96,7 +102,7 @@ const METRICS: PortfolioMetrics = {
 const RESULT: PortfolioLabResult = {
   contract: PORTFOLIO_LAB_CONTRACT.result,
   primary: {
-    id: "regimes",
+    id: REGIMES_CASE_ID,
     label: "Regime switching",
     model: "hmm",
     modelContract: PORTFOLIO_LAB_MODEL_CONTRACT.hmm,
@@ -104,26 +110,26 @@ const RESULT: PortfolioLabResult = {
     samples: [
       {
         pathIndex: 4,
-        wealth: [50_000, 51_200, 53_000],
-        drawdown: [0, 0, 0.02],
+        wealth: nominalWealth([50_000, 51_200, 53_000]),
+        drawdown: drawdownRatios([0, 0, 0.02]),
       },
     ],
     distribution: {
-      terminalWealth: [49_000, 53_000, 60_000],
-      maximumDrawdowns: [0.04, 0.08, 0.12],
+      terminalWealth: nominalWealth([49_000, 53_000, 60_000]),
+      maximumDrawdowns: drawdownRatios([0.04, 0.08, 0.12]),
       wealthPercentiles: {
-        p05: [50_000, 49_500, 49_000],
-        p10: [50_000, 50_000, 50_200],
-        p50: [50_000, 51_200, 53_000],
-        p90: [50_000, 52_000, 58_000],
-        p95: [50_000, 52_400, 60_000],
+        p05: nominalWealth([50_000, 49_500, 49_000]),
+        p10: nominalWealth([50_000, 50_000, 50_200]),
+        p50: nominalWealth([50_000, 51_200, 53_000]),
+        p90: nominalWealth([50_000, 52_000, 58_000]),
+        p95: nominalWealth([50_000, 52_400, 60_000]),
       },
       drawdownPercentiles: {
-        p05: [0, 0, 0],
-        p10: [0, 0, 0],
-        p50: [0, 0, 0.02],
-        p90: [0, 0.04, 0.08],
-        p95: [0, 0.06, 0.12],
+        p05: drawdownRatios([0, 0, 0]),
+        p10: drawdownRatios([0, 0, 0]),
+        p50: drawdownRatios([0, 0, 0.02]),
+        p90: drawdownRatios([0, 0.04, 0.08]),
+        p95: drawdownRatios([0, 0.06, 0.12]),
       },
     },
     diagnostics: {
@@ -140,7 +146,7 @@ const RESULT: PortfolioLabResult = {
   },
   comparisons: [
     {
-      id: "standard",
+      id: STANDARD_CASE_ID,
       label: "Standard Monte Carlo",
       model: "gbm",
       modelContract: PORTFOLIO_LAB_MODEL_CONTRACT.gbm,
@@ -193,6 +199,12 @@ describe("portfolio-lab contracts", () => {
     expect(structuredClone(RESULT)).toEqual(RESULT);
   });
 
+  it("keeps wealth and drawdown series semantically distinct", () => {
+    expectTypeOf<NominalWealthSeries>().not.toEqualTypeOf<DrawdownRatioSeries>();
+    expect(RESULT.primary.samples[0].wealth.kind).toBe("nominal-wealth");
+    expect(RESULT.primary.samples[0].drawdown.kind).toBe("drawdown-ratio");
+  });
+
   it("keeps HMM diagnostics behind the primary detail discriminant", () => {
     expect(countSampledStatePaths(RESULT.primary)).toBe(1);
     expect(RESULT.comparisons).toHaveLength(1);
@@ -243,6 +255,22 @@ describe("portfolio-lab contracts", () => {
       problem,
     });
   });
+
+  it("reports unsupported nested contract versions with negotiation details", () => {
+    const problem = {
+      contract: PORTFOLIO_LAB_CONTRACT.problem,
+      code: "UNSUPPORTED_CONTRACT",
+      message: "The requested model contract is not supported.",
+      path: ["cases", 1, "model", "contract"],
+      receivedContract: "portfolio-lab/model/hmm@2",
+      supportedContracts: [
+        PORTFOLIO_LAB_MODEL_CONTRACT.gbm,
+        PORTFOLIO_LAB_MODEL_CONTRACT.hmm,
+      ],
+    } as const satisfies PortfolioLabProblem;
+
+    expect(structuredClone(problem)).toEqual(problem);
+  });
 });
 
 function countSampledStatePaths(detail: PortfolioCaseDetail): number {
@@ -251,4 +279,12 @@ function countSampledStatePaths(detail: PortfolioCaseDetail): number {
   }
 
   return 0;
+}
+
+function nominalWealth(values: readonly number[]): NominalWealthSeries {
+  return { kind: "nominal-wealth", values };
+}
+
+function drawdownRatios(values: readonly number[]): DrawdownRatioSeries {
+  return { kind: "drawdown-ratio", values };
 }

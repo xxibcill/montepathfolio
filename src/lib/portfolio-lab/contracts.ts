@@ -13,6 +13,24 @@ export const PORTFOLIO_LAB_MODEL_CONTRACT = {
   hmm: "portfolio-lab/model/hmm@1",
 } as const;
 
+export type PortfolioLabModelContractByKind =
+  typeof PORTFOLIO_LAB_MODEL_CONTRACT;
+export type PortfolioLabModelKind = keyof PortfolioLabModelContractByKind;
+
+declare const portfolioCaseIdBrand: unique symbol;
+
+export type PortfolioCaseId = string & {
+  readonly [portfolioCaseIdBrand]: "PortfolioCaseId";
+};
+
+/**
+ * Applies the compile-time case-ID brand. Runner validation remains responsible
+ * for checking that IDs are non-empty, unique, and resolvable.
+ */
+export function asPortfolioCaseId(value: string): PortfolioCaseId {
+  return value as PortfolioCaseId;
+}
+
 export type PortfolioAsset = "stocks" | "bonds";
 export type HmmRegime = "bull" | "bear" | "sideways";
 export type HmmRegimeProbabilities = Readonly<Record<HmmRegime, number>>;
@@ -55,10 +73,15 @@ export interface HmmModelSpec {
   readonly initialStateProbabilities: HmmRegimeProbabilities;
 }
 
-export type MarketModelSpec = GbmModelSpec | HmmModelSpec;
+export interface MarketModelSpecByKind {
+  readonly gbm: GbmModelSpec;
+  readonly hmm: HmmModelSpec;
+}
+
+export type MarketModelSpec = MarketModelSpecByKind[PortfolioLabModelKind];
 
 export interface MarketCase {
-  readonly id: string;
+  readonly id: PortfolioCaseId;
   readonly label: string;
   readonly model: MarketModelSpec;
 }
@@ -84,7 +107,10 @@ export interface PortfolioPlan {
   /** Non-negative weights that sum to one. */
   readonly targetWeights: Readonly<Record<PortfolioAsset, number>>;
   readonly rebalance: RebalancePolicy;
-  /** Annualized decimal inflation rate. */
+  /**
+   * Annual effective decimal inflation rate. The cumulative inflation factor
+   * after `years` is `(1 + annualInflationRate) ** years`.
+   */
   readonly annualInflationRate: number;
   readonly targetValue: number;
 }
@@ -107,17 +133,29 @@ export interface PortfolioLabExecution {
 export interface PortfolioLabRequest {
   readonly contract: typeof PORTFOLIO_LAB_CONTRACT.request;
   readonly plan: PortfolioPlan;
-  readonly primaryCaseId: string;
+  readonly primaryCaseId: PortfolioCaseId;
   readonly cases: readonly MarketCase[];
   readonly execution: PortfolioLabExecution;
 }
 
-export interface PercentileSeries {
-  readonly p05: readonly number[];
-  readonly p10: readonly number[];
-  readonly p50: readonly number[];
-  readonly p90: readonly number[];
-  readonly p95: readonly number[];
+export interface NominalWealthSeries {
+  readonly kind: "nominal-wealth";
+  readonly values: readonly number[];
+}
+
+export interface DrawdownRatioSeries {
+  readonly kind: "drawdown-ratio";
+  readonly values: readonly number[];
+}
+
+export interface PercentileSeries<
+  Series extends NominalWealthSeries | DrawdownRatioSeries,
+> {
+  readonly p05: Series;
+  readonly p10: Series;
+  readonly p50: Series;
+  readonly p90: Series;
+  readonly p95: Series;
 }
 
 export interface WealthMetrics {
@@ -158,37 +196,40 @@ export interface PortfolioMetrics {
 }
 
 interface PortfolioCaseSummaryBase {
-  readonly id: string;
+  readonly id: PortfolioCaseId;
   readonly label: string;
   readonly metrics: PortfolioMetrics;
 }
 
-export interface GbmCaseSummary extends PortfolioCaseSummaryBase {
-  readonly model: "gbm";
-  readonly modelContract: typeof PORTFOLIO_LAB_MODEL_CONTRACT.gbm;
-}
+type PortfolioCaseModelIdentity<Kind extends PortfolioLabModelKind> = {
+  readonly model: Kind;
+  readonly modelContract: PortfolioLabModelContractByKind[Kind];
+};
 
-export interface HmmCaseSummary extends PortfolioCaseSummaryBase {
-  readonly model: "hmm";
-  readonly modelContract: typeof PORTFOLIO_LAB_MODEL_CONTRACT.hmm;
-}
+type PortfolioCaseSummaryByModel = {
+  readonly [Kind in PortfolioLabModelKind]: PortfolioCaseSummaryBase &
+    PortfolioCaseModelIdentity<Kind>;
+};
 
-export type PortfolioCaseSummary = GbmCaseSummary | HmmCaseSummary;
+export type GbmCaseSummary = PortfolioCaseSummaryByModel["gbm"];
+export type HmmCaseSummary = PortfolioCaseSummaryByModel["hmm"];
+export type PortfolioCaseSummary =
+  PortfolioCaseSummaryByModel[PortfolioLabModelKind];
 
 export interface SampledPortfolioPath {
   /** Original simulation path index, independent of sample array position. */
   readonly pathIndex: number;
   /** Nominal portfolio wealth at time zero and after every step. */
-  readonly wealth: readonly number[];
+  readonly wealth: NominalWealthSeries;
   /** Cash-flow-neutral drawdown ratio at the same time indexes. */
-  readonly drawdown: readonly number[];
+  readonly drawdown: DrawdownRatioSeries;
 }
 
 export interface PortfolioDistribution {
-  readonly terminalWealth: readonly number[];
-  readonly maximumDrawdowns: readonly number[];
-  readonly wealthPercentiles: PercentileSeries;
-  readonly drawdownPercentiles: PercentileSeries;
+  readonly terminalWealth: NominalWealthSeries;
+  readonly maximumDrawdowns: DrawdownRatioSeries;
+  readonly wealthPercentiles: PercentileSeries<NominalWealthSeries>;
+  readonly drawdownPercentiles: PercentileSeries<DrawdownRatioSeries>;
 }
 
 export interface GbmDiagnostics {
@@ -214,19 +255,22 @@ interface PortfolioCaseDetailBase extends PortfolioCaseSummaryBase {
   readonly distribution: PortfolioDistribution;
 }
 
-export interface GbmCaseDetail extends PortfolioCaseDetailBase {
-  readonly model: "gbm";
-  readonly modelContract: typeof PORTFOLIO_LAB_MODEL_CONTRACT.gbm;
-  readonly diagnostics: GbmDiagnostics;
+interface PortfolioCaseDiagnosticsByModel {
+  readonly gbm: GbmDiagnostics;
+  readonly hmm: HmmDiagnostics;
 }
 
-export interface HmmCaseDetail extends PortfolioCaseDetailBase {
-  readonly model: "hmm";
-  readonly modelContract: typeof PORTFOLIO_LAB_MODEL_CONTRACT.hmm;
-  readonly diagnostics: HmmDiagnostics;
-}
+type PortfolioCaseDetailByModel = {
+  readonly [Kind in PortfolioLabModelKind]: PortfolioCaseDetailBase &
+    PortfolioCaseModelIdentity<Kind> & {
+      readonly diagnostics: PortfolioCaseDiagnosticsByModel[Kind];
+    };
+};
 
-export type PortfolioCaseDetail = GbmCaseDetail | HmmCaseDetail;
+export type GbmCaseDetail = PortfolioCaseDetailByModel["gbm"];
+export type HmmCaseDetail = PortfolioCaseDetailByModel["hmm"];
+export type PortfolioCaseDetail =
+  PortfolioCaseDetailByModel[PortfolioLabModelKind];
 
 export type PortfolioLabWarningCode =
   | "MODEL_ASSUMPTION"
@@ -235,7 +279,7 @@ export type PortfolioLabWarningCode =
 
 export type PortfolioLabWarningScope =
   | { readonly kind: "request" }
-  | { readonly kind: "case"; readonly caseId: string };
+  | { readonly kind: "case"; readonly caseId: PortfolioCaseId };
 
 export interface PortfolioLabWarning {
   readonly contract: typeof PORTFOLIO_LAB_CONTRACT.warning;
@@ -304,12 +348,19 @@ export interface InvalidRequestProblem extends PortfolioLabProblemBase {
   readonly issues: readonly PortfolioLabIssue[];
 }
 
+export type PortfolioLabInputContract =
+  | typeof PORTFOLIO_LAB_CONTRACT.request
+  | PortfolioLabModelContractByKind[PortfolioLabModelKind];
+
+export type PortfolioLabContractPath =
+  | readonly ["contract"]
+  | readonly ["cases", number, "model", "contract"];
+
 export interface UnsupportedContractProblem extends PortfolioLabProblemBase {
   readonly code: "UNSUPPORTED_CONTRACT";
+  readonly path: PortfolioLabContractPath;
   readonly receivedContract: string | null;
-  readonly supportedContracts: readonly [
-    typeof PORTFOLIO_LAB_CONTRACT.request,
-  ];
+  readonly supportedContracts: readonly PortfolioLabInputContract[];
 }
 
 export interface ResourceLimitProblem extends PortfolioLabProblemBase {
@@ -330,7 +381,7 @@ export interface WorkerFailureProblem extends PortfolioLabProblemBase {
 
 export interface NumericalFailureProblem extends PortfolioLabProblemBase {
   readonly code: "NUMERICAL_FAILURE";
-  readonly caseId: string;
+  readonly caseId: PortfolioCaseId;
   readonly location?: {
     readonly pathIndex?: number;
     readonly stepIndex?: number;
