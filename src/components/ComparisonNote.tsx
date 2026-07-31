@@ -5,11 +5,11 @@ import {
   reasonForChange,
 } from "../lib/comparison";
 import { formatCompactCurrency } from "../lib/format";
-import type { SimulationResult } from "../types/simulation";
+import type { PortfolioProjectionResult } from "../labs/portfolio-projection-model";
 
 interface ComparisonNoteProps {
-  result: SimulationResult;
-  previousResult: SimulationResult | null;
+  result: PortfolioProjectionResult;
+  previousResult: PortfolioProjectionResult | null;
 }
 
 function signedPercent(value: number): string {

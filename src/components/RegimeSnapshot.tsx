@@ -4,10 +4,10 @@ import {
   REGIME_LABELS,
   REGIME_ORDER,
 } from "../lib/regimes";
-import type { SimulationResult } from "../types/simulation";
+import type { PortfolioProjectionResult } from "../labs/portfolio-projection-model";
 
 interface RegimeSnapshotProps {
-  result: SimulationResult;
+  result: PortfolioProjectionResult;
 }
 
 export function RegimeSnapshot({ result }: RegimeSnapshotProps) {

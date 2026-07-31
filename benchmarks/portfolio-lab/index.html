@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Portfolio Lab browser benchmark</title>
+    <style>
+      :root { color-scheme: light dark; font-family: ui-monospace, monospace; }
+      body { margin: 2rem auto; max-width: 72rem; padding: 0 1rem; }
+      pre { overflow: auto; padding: 1rem; border: 1px solid currentColor; }
+    </style>
+  </head>
+  <body data-status="running">
+    <h1>Portfolio Lab browser-worker benchmark</h1>
+    <p id="benchmark-status" aria-live="polite">Loading benchmark…</p>
+    <pre id="benchmark-output">No result yet.</pre>
+    <script type="module" src="./benchmark.ts"></script>
+  </body>
+</html>

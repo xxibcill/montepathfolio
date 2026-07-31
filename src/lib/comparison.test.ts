@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { SimulationInputs } from "../types/simulation";
+import type { PortfolioProjectionInputs } from "../types/portfolio-projection";
 import { DEFAULT_INPUTS } from "./defaults";
 import {
   changedFields,
@@ -81,8 +81,8 @@ describe("scenario comparison copy", () => {
 });
 
 function createInputs(
-  overrides: Partial<SimulationInputs> = {},
-): SimulationInputs {
+  overrides: Partial<PortfolioProjectionInputs> = {},
+): PortfolioProjectionInputs {
   return {
     ...DEFAULT_INPUTS,
     ...overrides,

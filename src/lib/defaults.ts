@@ -1,9 +1,9 @@
 import hmmModel from "../data/hmm-model.json";
 import type {
-  HMMConfiguration,
-  Regime,
-  SimulationInputs,
-} from "../types/simulation";
+  PortfolioProjectionHmmConfiguration,
+  PortfolioProjectionInputs,
+  PortfolioProjectionRegime,
+} from "../types/portfolio-projection";
 import {
   createHMMConfiguration,
   parseHMMModelPayload,
@@ -14,7 +14,7 @@ export const DEFAULT_HMM_MODEL = parseHMMModelPayload(hmmModel);
 export const DEFAULT_HMM_CONFIGURATION =
   createHMMConfiguration(DEFAULT_HMM_MODEL);
 
-export const DEFAULT_INPUTS: SimulationInputs = {
+export const DEFAULT_INPUTS: PortfolioProjectionInputs = {
   initialCapital: 50_000,
   monthlyContribution: 1_000,
   horizonYears: 25,
@@ -39,7 +39,7 @@ export const DEFAULT_INPUTS: SimulationInputs = {
 
 export const STORAGE_KEY = "pathfolio-risk-sandbox-v1";
 
-export function loadStoredInputs(): SimulationInputs {
+export function loadStoredPortfolioProjectionInputs(): PortfolioProjectionInputs {
   if (typeof window === "undefined") {
     return DEFAULT_INPUTS;
   }
@@ -50,7 +50,7 @@ export function loadStoredInputs(): SimulationInputs {
       return DEFAULT_INPUTS;
     }
 
-    const parsed = JSON.parse(stored) as Partial<SimulationInputs>;
+    const parsed = parseStoredProjectionPayload(JSON.parse(stored));
     const storedHMM = parsed.hmm;
     const regimes = Object.fromEntries(
       REGIME_ORDER.map((regime) => [
@@ -69,7 +69,10 @@ export function loadStoredInputs(): SimulationInputs {
             DEFAULT_HMM_CONFIGURATION.regimes[regime].correlation,
         },
       ]),
-    ) as Record<Regime, HMMConfiguration["regimes"][Regime]>;
+    ) as Record<
+      PortfolioProjectionRegime,
+      PortfolioProjectionHmmConfiguration["regimes"][PortfolioProjectionRegime]
+    >;
 
     return {
       ...DEFAULT_INPUTS,
@@ -87,7 +90,7 @@ export function loadStoredInputs(): SimulationInputs {
               ...storedHMM?.transitionMatrix?.[regime],
             },
           ]),
-        ) as HMMConfiguration["transitionMatrix"],
+        ) as PortfolioProjectionHmmConfiguration["transitionMatrix"],
         currentStateProbabilities: {
           ...DEFAULT_HMM_CONFIGURATION.currentStateProbabilities,
           ...storedHMM?.currentStateProbabilities,
@@ -99,4 +102,14 @@ export function loadStoredInputs(): SimulationInputs {
   } catch {
     return DEFAULT_INPUTS;
   }
+}
+
+/** Kept for callers outside the projection route while they migrate names. */
+export const loadStoredInputs = loadStoredPortfolioProjectionInputs;
+
+function parseStoredProjectionPayload(
+  value: unknown,
+): Partial<PortfolioProjectionInputs> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return value as Partial<PortfolioProjectionInputs>;
 }

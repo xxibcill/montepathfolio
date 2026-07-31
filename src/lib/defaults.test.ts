@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { SimulationInputs } from "../types/simulation";
+import type { PortfolioProjectionInputs } from "../types/portfolio-projection";
 import { DEFAULT_INPUTS, loadStoredInputs, STORAGE_KEY } from "./defaults";
 
 afterEach(() => {
@@ -9,7 +9,9 @@ afterEach(() => {
 
 describe("stored input migration", () => {
   it("keeps legacy v1 scenarios on the constant model", () => {
-    const legacyInputs: Partial<SimulationInputs> = { ...DEFAULT_INPUTS };
+    const legacyInputs: Partial<{
+      -readonly [Key in keyof PortfolioProjectionInputs]: PortfolioProjectionInputs[Key];
+    }> = { ...DEFAULT_INPUTS };
     delete legacyInputs.hmm;
     delete legacyInputs.model;
     const getItem = vi.fn((key: string) =>

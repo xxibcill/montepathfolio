@@ -3,18 +3,21 @@ import {
   REGIME_ORDER,
   REPRESENTATIVE_REGIME_PATH_COUNT,
 } from "../lib/regimes";
-import type { Regime, SimulationResult } from "../types/simulation";
+import type { PortfolioProjectionResult } from "../labs/portfolio-projection-model";
+import type { PortfolioProjectionRegime } from "../types/portfolio-projection";
 
 interface RegimePathOverlayProps {
-  result: SimulationResult;
+  result: PortfolioProjectionResult;
 }
 
 interface RegimeSegment {
-  regime: Regime;
+  regime: PortfolioProjectionRegime;
   length: number;
 }
 
-function compressRegimePath(path: Regime[]): RegimeSegment[] {
+function compressRegimePath(
+  path: readonly PortfolioProjectionRegime[],
+): RegimeSegment[] {
   const segments: RegimeSegment[] = [];
 
   for (const regime of path) {
@@ -29,8 +32,12 @@ function compressRegimePath(path: Regime[]): RegimeSegment[] {
   return segments;
 }
 
-function summarizePath(path: Regime[]): string {
-  const counts: Record<Regime, number> = { bull: 0, bear: 0, sideways: 0 };
+function summarizePath(path: readonly PortfolioProjectionRegime[]): string {
+  const counts: Record<PortfolioProjectionRegime, number> = {
+    bull: 0,
+    bear: 0,
+    sideways: 0,
+  };
   for (const regime of path) counts[regime] += 1;
 
   return REGIME_ORDER.map(

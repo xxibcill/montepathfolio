@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useCanvasSize } from "../hooks/useCanvasSize";
+import { useThemeRevision } from "../hooks/useTheme";
 import {
   appendSeriesPath,
   CHART_COLORS as COLORS,
@@ -9,10 +10,10 @@ import {
   formatProbability,
   strokeSeries,
 } from "../lib/chart";
-import type { SimulationResult } from "../types/simulation";
+import type { PortfolioProjectionResult } from "../labs/portfolio-projection-model";
 
 export interface DrawdownChartProps {
-  result: SimulationResult;
+  result: PortfolioProjectionResult;
   className?: string;
 }
 
@@ -30,6 +31,7 @@ export function DrawdownChart({
     minHeight: 270,
     maxHeight: 390,
   });
+  const themeRevision = useThemeRevision();
 
   const summary = useMemo(() => {
     const recovery = result.metrics.averageRecoveryMonths;
@@ -324,7 +326,7 @@ export function DrawdownChart({
         dash: [6, 4],
       });
     }
-  }, [dpr, height, result, width]);
+  }, [dpr, height, result, themeRevision, width]);
 
   const recovery = result.metrics.averageRecoveryMonths;
   const unresolved = result.metrics.probabilityOfUnrecoveredDrawdown;

@@ -494,8 +494,8 @@ describe("runSimulation", () => {
       0,
     );
     expect(result.metrics.probabilityOfUnrecoveredDrawdown).toBeLessThanOrEqual(1);
-    expect(result.metrics.expectedShortfall).toBeGreaterThanOrEqual(0);
-    expect(result.metrics.expectedShortfall).toBeLessThanOrEqual(1);
+    expect(result.metrics.tailCapitalShortfall).toBeGreaterThanOrEqual(0);
+    expect(result.metrics.tailCapitalShortfall).toBeLessThanOrEqual(1);
     expect(result.samplePaths).toHaveLength(160);
     expect(result.sampleDrawdownPaths).toHaveLength(160);
     expect(result.terminalValues).toHaveLength(500);

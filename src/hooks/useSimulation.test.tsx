@@ -3,14 +3,15 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
 import { DEFAULT_INPUTS } from "../lib/defaults";
-import { runSimulation } from "../lib/simulation";
-import type {
-  SimulationInputs,
-  SimulationWorkerRequest,
-  SimulationWorkerResponse,
-} from "../types/simulation";
+import type { PortfolioLabOutcome } from "../lib/portfolio-lab/contracts";
+import { executeValidatedPortfolioLabRequest } from "../lib/portfolio-lab/engine";
+import {
+  PORTFOLIO_LAB_WORKER_PROTOCOL,
+  type PortfolioLabWorkerRequest,
+  type PortfolioLabWorkerResponse,
+} from "../lib/portfolio-lab/worker-protocol";
+import type { PortfolioProjectionInputs } from "../types/portfolio-projection";
 import { useSimulation } from "./useSimulation";
 
 type SimulationState = ReturnType<typeof useSimulation>;
@@ -18,40 +19,43 @@ type SimulationState = ReturnType<typeof useSimulation>;
 class FakeWorker {
   static instances: FakeWorker[] = [];
 
-  onmessage:
-    | ((event: MessageEvent<SimulationWorkerResponse>) => void)
-    | null = null;
-  onerror: (() => void) | null = null;
-  readonly requests: SimulationWorkerRequest[] = [];
+  onmessage: ((event: MessageEvent<unknown>) => void) | null = null;
+  onerror: ((event: ErrorEvent) => void) | null = null;
+  onmessageerror: ((event: MessageEvent<unknown>) => void) | null = null;
+  readonly messages: PortfolioLabWorkerRequest[] = [];
   terminated = false;
 
   constructor() {
     FakeWorker.instances.push(this);
   }
 
-  postMessage(request: SimulationWorkerRequest): void {
-    this.requests.push(request);
+  postMessage(message: PortfolioLabWorkerRequest): void {
+    this.messages.push(message);
   }
 
   terminate(): void {
     this.terminated = true;
   }
 
-  respond(response: SimulationWorkerResponse): void {
-    this.onmessage?.({ data: response } as MessageEvent<SimulationWorkerResponse>);
+  respond(outcome: PortfolioLabOutcome): void {
+    const request = this.messages.find((message) => message.kind === "run");
+    if (!request) throw new Error("No native portfolio-lab request was posted.");
+    const response: PortfolioLabWorkerResponse = {
+      contract: PORTFOLIO_LAB_WORKER_PROTOCOL,
+      kind: "outcome",
+      runId: request.runId,
+      outcome,
+    };
+    this.onmessage?.({ data: response } as MessageEvent<unknown>);
   }
 }
 
-interface HookHarnessProps {
-  capture: (state: SimulationState) => void;
-}
-
-function HookHarness({ capture }: HookHarnessProps) {
+function HookHarness({ capture }: { capture: (state: SimulationState) => void }) {
   capture(useSimulation());
   return null;
 }
 
-const FIRST_INPUTS: SimulationInputs = {
+const FIRST_INPUTS: PortfolioProjectionInputs = {
   ...DEFAULT_INPUTS,
   horizonYears: 1,
   model: "constant",
@@ -59,8 +63,9 @@ const FIRST_INPUTS: SimulationInputs = {
   seed: 101,
 };
 
-const SECOND_INPUTS: SimulationInputs = {
+const SECOND_INPUTS: PortfolioProjectionInputs = {
   ...FIRST_INPUTS,
+  model: "hmm",
   seed: 202,
 };
 
@@ -73,7 +78,6 @@ beforeEach(() => {
   state = null;
   vi.stubGlobal("Worker", FakeWorker);
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -83,9 +87,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  if (root) {
-    act(() => root!.unmount());
-  }
+  if (root) act(() => root!.unmount());
   container?.remove();
   root = null;
   container = null;
@@ -93,52 +95,77 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("useSimulation worker response ownership", () => {
-  it.each([
-    {
-      responseName: "success",
-      staleResponse: {
-        id: 1,
-        result: runSimulation(FIRST_INPUTS),
-      } satisfies SimulationWorkerResponse,
-    },
-    {
-      responseName: "error",
-      staleResponse: {
-        id: 1,
-        error: "an older request failed",
-      } satisfies SimulationWorkerResponse,
-    },
-  ])(
-    "ignores a stale $responseName response and accepts the current response",
-    ({ staleResponse }) => {
-      expect(FakeWorker.instances).toHaveLength(1);
+describe("useSimulation native portfolio-lab ownership", () => {
+  it("posts an explicit GBM/HMM request and presents the selected result", async () => {
+    act(() => state!.run(FIRST_INPUTS));
 
-      act(() => state!.run(FIRST_INPUTS));
-      const firstWorker = FakeWorker.instances[0]!;
-      expect(firstWorker.requests).toEqual([{ id: 1, inputs: FIRST_INPUTS }]);
+    const worker = FakeWorker.instances[0]!;
+    const message = worker.messages[0];
+    expect(message).toMatchObject({
+      contract: PORTFOLIO_LAB_WORKER_PROTOCOL,
+      kind: "run",
+      request: {
+        contract: "portfolio-lab/request@1",
+        primaryCaseId: "portfolio-projection/gbm",
+        cases: [
+          { id: "portfolio-projection/gbm", model: { kind: "gbm" } },
+          { id: "portfolio-projection/hmm", model: { kind: "hmm" } },
+        ],
+      },
+    });
+    if (!message || message.kind !== "run") throw new Error("Missing run request.");
 
-      act(() => state!.run(SECOND_INPUTS));
-      const currentWorker = FakeWorker.instances[1]!;
-      expect(firstWorker.terminated).toBe(true);
-      expect(currentWorker.requests).toEqual([{ id: 2, inputs: SECOND_INPUTS }]);
+    const result = executeValidatedPortfolioLabRequest(message.request);
+    await act(async () => {
+      worker.respond({ ok: true, result });
+      await Promise.resolve();
+    });
 
-      act(() => firstWorker.respond(staleResponse));
-      expect(state!.status).toBe("running");
-      expect(state!.result).toBeNull();
-      expect(state!.error).toBeNull();
+    expect(state!.status).toBe("ready");
+    expect(state!.result).toMatchObject({
+      contract: "portfolio-lab/result@1",
+      inputs: { model: "constant", seed: 101 },
+      provenance: { requestContract: "portfolio-lab/request@1", seed: 101 },
+    });
+    expect(state!.result!.comparisonMetrics).toHaveProperty("constant");
+    expect(state!.result!.comparisonMetrics).toHaveProperty("hmm");
+  });
 
-      const currentResult = runSimulation(SECOND_INPUTS);
-      act(() => currentWorker.respond({ id: 2, result: currentResult }));
+  it("cancels the superseded native run and ignores its late response", async () => {
+    act(() => state!.run(FIRST_INPUTS));
+    const firstWorker = FakeWorker.instances[0]!;
+    const firstMessage = firstWorker.messages[0];
+    if (!firstMessage || firstMessage.kind !== "run") {
+      throw new Error("Missing first run request.");
+    }
+    const firstResult = executeValidatedPortfolioLabRequest(firstMessage.request);
 
-      expect(state!.status).toBe("ready");
-      expect(state!.result).toEqual(currentResult);
-      expect(state!.error).toBeNull();
+    act(() => state!.run(SECOND_INPUTS));
+    const currentWorker = FakeWorker.instances[1]!;
+    expect(firstWorker.messages.filter((message) => message.kind === "cancel"))
+      .toHaveLength(1);
+    expect(firstWorker.terminated).toBe(true);
 
-      act(() => firstWorker.respond(staleResponse));
-      expect(state!.status).toBe("ready");
-      expect(state!.result).toEqual(currentResult);
-      expect(state!.error).toBeNull();
-    },
-  );
+    await act(async () => {
+      firstWorker.respond({ ok: true, result: firstResult });
+      await Promise.resolve();
+    });
+    expect(state!.status).toBe("running");
+    expect(state!.result).toBeNull();
+
+    const currentMessage = currentWorker.messages[0];
+    if (!currentMessage || currentMessage.kind !== "run") {
+      throw new Error("Missing current run request.");
+    }
+    const currentResult = executeValidatedPortfolioLabRequest(
+      currentMessage.request,
+    );
+    await act(async () => {
+      currentWorker.respond({ ok: true, result: currentResult });
+      await Promise.resolve();
+    });
+
+    expect(state!.status).toBe("ready");
+    expect(state!.result?.inputs).toMatchObject({ model: "hmm", seed: 202 });
+  });
 });

@@ -1,170 +1,189 @@
-# Portfolio Risk Sandbox
+# Montepathfolio — Quantitative Finance Laboratory
 
-Portfolio Risk Sandbox is an interactive Monte Carlo planning tool for exploring how a stock-and-bond portfolio might evolve over time. It compares a constant-parameter model with a three-state Hidden Markov Model (HMM) that moves between persistent bull, bear, and sideways regimes. Change the portfolio assumptions and the app recalculates both sets of 1,000 monthly paths in a Web Worker, then shows the range of outcomes and explains how the latest scenario differs from the previous one.
+Montepathfolio is a browser-based learning environment for exploring the
+mathematics behind portfolio simulation, risk, allocation,
+derivatives, rates and credit, and market microstructure. It contains six
+focused laboratories and 31 guided chapters. Each chapter starts with a
+question, states its units and assumptions, runs a fixed-seed experiment, and
+connects the output to equations, diagnostics, limitations, and a worked
+intuition.
 
-This project describes uncertainty; it does not predict markets.
+The project describes uncertainty and model mechanics; it does not predict
+markets. Every preset and result is educational only—not investment, trading,
+pricing, credit, retirement, tax, or suitability advice.
 
-## MVP features
+## Laboratories
 
-- Configure initial capital, monthly contributions, investment horizon, financial target, inflation, and stock/bond allocation.
-- Set annual expected return and volatility for stocks and bonds.
-- Edit stock–bond correlation and choose monthly, annual, or no rebalancing.
-- Switch between Standard Monte Carlo and HMM Monte Carlo while retaining a side-by-side comparison.
-- Inspect current bull, bear, and sideways probabilities and portfolio-level regime moments.
-- Edit a row-normalized monthly transition matrix heatmap.
-- Inspect an illustrative regime timeline and follow six numbered portfolio paths through their matching simulated regime strips.
-- Inspect a Canvas-rendered path chart with sampled paths, a median, 10th–90th and 5th–95th percentile bands, and the target.
-- Explore a terminal-value histogram and drawdown chart.
-- Review target probability, median ending value, inflation-adjusted median value, probability of ending below total contributions, median maximum drawdown, probability of a drawdown over 30%, average recovery time, and expected shortfall.
-- Compare target probability, median ending value, maximum drawdown, expected shortfall, recovery time, and target shortfall across both models.
-- Compare consecutive scenarios using the same random seed, with changes summarized in plain language.
-- Keep scenario inputs in browser `localStorage`; no account or backend is required.
+| Laboratory | Chapters | Topics |
+| --- | ---: | --- |
+| Portfolio projection | 9 | Accumulation with GBM/HMM, jump diffusion, GARCH, historical bootstrap, retirement sequence risk, regime provenance, Student-t innovations, copulas, and the sanctioned composite market model |
+| Risk | 2 | Historical/parametric/Monte Carlo VaR and CVaR, Euler attribution, and rolling coverage backtests |
+| Portfolio construction | 6 | Mean-variance, CAPM, factor models, risk parity, Kelly, and Black-Litterman |
+| Derivatives | 5 | Black-Scholes, Cox-Ross-Rubinstein trees, Monte Carlo payoffs, Heston, and option strategies |
+| Rates & credit | 5 | Vasicek, CIR, Nelson-Siegel, hazard-rate credit, and Merton structural credit |
+| Trading mechanics | 4 | Ornstein-Uhlenbeck spreads, a deterministic order book, agent scenarios, and Almgren-Chriss execution |
+| **Total** | **31** | Six separate learning workflows sharing validated numerical kernels |
 
-## Stack
+Open a laboratory from the index, change one assumption, and run the experiment.
+The interface retains the prior run for a cause-and-effect comparison. Presets
+are illustrative rather than historical or live. Scenario inputs are stored per
+laboratory in browser `localStorage`, and compact inputs or result summaries can
+be downloaded without an account or backend.
 
-- React 19 and TypeScript
-- Vite
-- Canvas 2D for charts
-- Browser Web Worker for simulation
-- Plain CSS with responsive layouts
-- Vitest and ESLint
+Five chapters—GARCH fitting, historical bootstrap, ordered-regime fitting, VaR
+backtesting, and rolling factor analysis—also accept optional local CSV files.
+Each chapter provides a template; attachments are capped at 2 MB, validated in
+the worker, labeled `user-imported`, and never sent to a service. Saved scenarios
+retain only the file name/contract reference, not the raw file contents.
+
+The learner-facing equations, conventions, validation gates, examples, and
+limitations live in the [quantitative model notes](docs/models/README.md). The
+[references and further reading](docs/models/references.md) point to the classic
+sources behind the models.
 
 ## Quick start
 
-Install Node.js `^20.19.0` or `>=22.12.0` with npm, then:
+Use Node.js `^20.19.0` or `>=22.12.0` with npm:
 
 ```bash
 npm ci
 npm run dev
 ```
 
-Open [http://localhost:4173](http://localhost:4173).
-
-Create a production build with:
+Open [http://localhost:4173](http://localhost:4173). Create a production build
+with:
 
 ```bash
 npm run build
 ```
 
-## Model and method
+## Architecture and reproducibility
 
-Each asset follows geometric Brownian motion at monthly intervals. In the constant model, its annual return, volatility, and stock–bond correlation remain fixed:
+The stack is React 19 with TypeScript, Vite, Canvas 2D, dedicated browser Web
+Workers, plain responsive CSS, Vitest, and ESLint.
 
-$$
-S_{t+\Delta t}
-=
-S_t \exp\left[
-\left(\mu-\frac{\sigma^2}{2}\right)\Delta t
-+\sigma\sqrt{\Delta t}\,Z
-\right]
-$$
-
-Here, $\mu$ is the annual expected return, $\sigma$ is annual volatility, $\Delta t=1/12$, and $Z$ is a standard normal shock.
-
-For the two-asset model, the bond shock is constructed from the stock shock and a second independent shock:
-
-$$
-Z_{\text{bond}}
-=
-\rho Z_{\text{stock}}
-+\sqrt{1-\rho^2}\,\varepsilon
-$$
-
-This produces the selected stock–bond correlation $\rho$. Contributions are added after each monthly return and split by the target allocation. The portfolio is restored to that allocation on the selected rebalancing schedule.
-
-### Hidden Markov regime engine
-
-The HMM model uses three hidden states:
+The application is intentionally split by workflow rather than built as one
+universal model graph:
 
 ```text
-             Next state
-Current     Bull   Bear   Sideways
-Bull        0.94   0.02   0.04
-Bear        0.08   0.87   0.05
-Sideways    0.12   0.05   0.83
+React laboratory index and lazy chapter routes
+        -> versioned, structured-clone-safe lesson request
+        -> dedicated browser Web Worker
+        -> workflow-specific quantitative engine
+        -> bounded chart series, metrics, diagnostics, warnings, and provenance
 ```
 
-The matrix is interpreted at the simulator’s monthly time step. A path samples its initial state from the current-state probabilities, then samples the next state before each monthly return. Each regime supplies a different expected-return vector and covariance structure through regime-specific stock return, stock volatility, bond return, bond volatility, and stock–bond correlation assumptions:
+- [`src/labs/catalog.ts`](src/labs/catalog.ts) defines the six laboratories,
+  chapter learning material, input units, bounds, and illustrative presets.
+- [`src/workers/lesson.worker.ts`](src/workers/lesson.worker.ts) runs advanced
+  chapter calculations off the interface thread. Its protocol returns structured
+  failures, validates bounded optional data attachments, and the React hook
+  handles cancellation and stale responses.
+- [`src/lib/quant`](src/lib/quant) owns the standalone market, risk,
+  construction, derivatives, rates/credit, and trading engines. Shared matrix,
+  statistics, distribution, validation, and semantic-randomness kernels live in
+  [`core.ts`](src/lib/quant/core.ts).
+- [`src/lib/portfolio-lab`](src/lib/portfolio-lab) owns two native versioned
+  seams. Frozen request@1 preserves GBM/HMM behavior with in-process and Web
+  Worker runners. Request@2 adds explicit GBM, jump-diffusion, GARCH, and
+  sanctioned-composite cases with generalized holdings, contributions,
+  withdrawals, rebalancing, grouped portfolio metrics, and terminal-loss
+  VaR/CVaR.
+- [`src/labs/PortfolioProjectionLab.tsx`](src/labs/PortfolioProjectionLab.tsx)
+  preserves the original accumulation teaching workflow while constructing
+  explicit native GBM/HMM requests. Its learner-facing persisted input and chart
+  view models are separate from the deprecated simulation compatibility types;
+  the migration evidence is recorded in the
+  [legacy-adapter removal record](docs/legacy-portfolio-lab-adapter-removal.md).
 
-$$
-\mathbf{r}_t \mid z_t=k
-\sim \mathcal{N}(\boldsymbol{\mu}_k,\boldsymbol{\Sigma}_k)
-$$
+Stochastic engines use versioned semantic random addresses rather than relying
+on one sequential stream. A draw is keyed by roles such as seed, model, path,
+step, asset, and shock type. This makes fixed-version/fixed-seed runs
+reproducible, keeps unrelated random roles isolated, and supports fair paired
+comparisons. It does not make an illustrative scenario probable. See
+[semantic random streams](docs/semantic-random-streams.md).
 
-The bundled [`src/data/hmm-model.json`](src/data/hmm-model.json) is an illustrative training-service payload, not a live or historically fitted signal. It demonstrates the frontend contract for:
+Rates and volatilities are decimal values (`0.05` means 5%). Model contracts
+state time and return conventions, validate dimensions and resource limits, and
+return bounded samples rather than every simulated value by default. Calibration
+snapshots and historical datasets carry provenance and must not be described as
+live unless the source actually is live.
 
-- State labels and regime-specific multi-asset assumptions
-- Transition probabilities
-- Current-state probabilities
-- Optional historical timeline observations
+## Tests, checks, and benchmark
 
-The complete payload type lives in [`src/types/hmm-model.ts`](src/types/hmm-model.ts), and [`src/lib/hmm-model.ts`](src/lib/hmm-model.ts) validates service data at runtime before adapting it to the simulator. State arrays may arrive in any order: transition-matrix rows and columns follow the payload’s state-array order and are mapped to regimes by label.
-
-A production Python service can train a three-state Gaussian HMM from weekly log returns and realized volatility, label the otherwise arbitrary state IDs by their learned return/volatility statistics, and export the same JSON shape.
-
-Every UI run uses 1,000 paths. Gaussian asset shocks and HMM regime transitions use [versioned semantic random streams](docs/semantic-random-streams.md) keyed by seed, comparison group, path, step, and role. Standard and HMM paths share the same diffusion addresses, unrelated draws cannot shift existing values, and corresponding paths keep the same shock prefix when the horizon changes. The charts calculate monthly 5th, 10th, 50th, 90th, and 95th percentiles; up to 160 representative paths are retained for rendering.
-
-Drawdown is measured on a parallel cash-flow-neutral portfolio index using the same asset shocks, allocation, and rebalancing schedule. Monthly deposits therefore increase the wealth paths without masking investment losses in the drawdown metrics.
-
-## Assumptions and limitations
-
-- Standard Monte Carlo holds expected returns, volatility, and correlation constant. HMM Monte Carlo changes them only when its hidden regime changes.
-- Returns use Gaussian monthly shocks and lognormal prices. The model does not represent fat tails, within-regime autocorrelation, historical bootstrapping, or parameter-estimation error.
-- The bundled current-state probabilities, transition matrix, and timeline are illustrative defaults. They are not live market estimates.
-- The MVP supports only stock and bond proxies. It does not include withdrawals, taxes, fees, transaction costs, market-event modes, or dynamic allocation strategies.
-- Contributions are non-negative and arrive monthly. The target and charted portfolio paths are nominal; inflation is used only to report the median ending value in today’s dollars.
-- “Chance of a loss” means ending below total capital contributed, not necessarily below the initial balance.
-- “Expected shortfall” means the average percentage loss versus contributed capital among the lowest 5% of terminal values; it is not a forecast of a specific loss.
-- “Target shortfall” means the average percentage gap versus the target among paths that finish below it. It describes accumulation outcomes; retirement withdrawals and retirement-failure modeling are not included.
-- Average recovery time includes completed drawdown episodes; the interface reports separately how many paths remain below a prior peak at the horizon.
-- Results depend on user-supplied assumptions and a finite simulated sample. They are educational illustrations, not forecasts, investment recommendations, or financial advice.
-
-## Tests and checks
-
-```bash
-npm test
-npm run lint
-npm run build
-```
-
-Run the complete validation sequence:
+Run the full validation sequence:
 
 ```bash
 npm run check
 ```
 
-For test watch mode:
+Or run each stage separately:
 
 ```bash
-npm run test:watch
+npm run lint
+npm test
+npm run build
 ```
 
-## Roadmap
+Test watch mode is available through `npm run test:watch`. The tests emphasize
+hand-calculated fixtures, analytical and limiting cases, fixed-seed statistical
+properties, matrix and accounting invariants, resource validation, worker
+serialization, bounded CSV parsing/provenance, cancellation, and stale-response
+handling.
 
-The planned evolution from the current GBM/HMM portfolio simulator into focused
-portfolio, risk, derivatives, rates and credit, and trading laboratories is
-documented in
-[`docs/quantitative-model-roadmap.md`](docs/quantitative-model-roadmap.md).
+Run the reproducible browser-worker benchmark with:
 
-## Project structure
+```bash
+npm run benchmark:portfolio
+npm run benchmark:release1
+```
+
+The benchmark measures a 1,000-path, 25-year, two-case GBM/HMM worker round trip.
+The [recorded baseline](docs/benchmarks/portfolio-lab-baseline.md) is descriptive
+machine-specific evidence, not a latency guarantee. The separate
+[Release 1 benchmark](docs/benchmarks/release-1-model-verticals.md) measures jump
+diffusion, GARCH, and mean–variance through the production lesson-worker boundary
+against a deliberately generous classroom-interaction budget.
+
+## Scope and limitations
+
+- All built-in data, HMM state probabilities, transition matrices, parameters,
+  and presets are transparent classroom examples. They are not live estimates.
+- A model result is conditional on its inputs and simplifying assumptions. It
+  does not include parameter uncertainty merely because it uses Monte Carlo.
+- The original accumulation chapter compares constant-parameter GBM with a
+  three-state Gaussian HMM. Its capital-relative `tailCapitalShortfall` measure
+  is deliberately distinct from standard loss-tail CVaR in the Risk Lab.
+- Historical resampling and calibration record source provenance but do not turn
+  the past into a forecast.
+- Pricing, credit, trading, and retirement chapters omit many real-world
+  frictions and institutional constraints. Each model note lists the exact
+  omissions for that implementation.
+- No output is a recommendation, forecast, quoted market price, risk limit,
+  credit assessment, or safe-withdrawal promise.
+
+## Documentation and project map
+
+- [Implementation roadmap and status ledger](docs/quantitative-model-roadmap.md)
+- [Quantitative model notes](docs/models/README.md)
+- [References and further reading](docs/models/references.md)
+- [Portfolio benchmark record](docs/benchmarks/portfolio-lab-baseline.md)
+- [Legacy-adapter migration record](docs/legacy-portfolio-lab-adapter-removal.md)
 
 ```text
 src/
-├── components/              Scenario controls and Canvas visualizations
-├── data/
-│   └── hmm-model.json       Illustrative HMM training-service payload
-├── hooks/                   Worker lifecycle and responsive Canvas sizing
+├── components/          Shared controls and accessible Canvas visualizations
+├── data/                Illustrative HMM payload
+├── hooks/               Worker lifecycle, theme, and Canvas sizing
+├── labs/                Index, routes, 31-chapter catalog, runners, workspaces
 ├── lib/
-│   ├── defaults.ts          Default scenario and local-storage loading
-│   ├── format.ts            Display formatting
-│   ├── hmm-model.ts         Training-service payload validation and adaptation
-│   ├── portfolio-lab/       Native engine, runner, contracts, and random streams
-│   ├── regimes.ts           Transition editing and regime portfolio moments
-│   ├── simulation.ts        Legacy UI compatibility adapter
-│   └── simulation.test.ts   Determinism, GBM, percentile, and risk tests
-├── types/                   Simulation and HMM service-contract types
-├── workers/                 Simulation Web Worker entry point
-├── App.tsx                  Application layout and scenario comparison flow
-├── main.tsx                 React entry point
-└── styles.css               Responsive visual system
+│   ├── portfolio-lab/   Native v1/v2 contracts, portfolio engines, adapters
+│   ├── quant/           Shared core plus six workflow-specific model modules
+│   └── simulation.ts    Deprecated, test-only compatibility code; no app caller
+├── types/               Learner workflow contracts plus quarantined legacy types
+└── workers/             Lesson and native portfolio workers
 ```
+
+The [quantitative model roadmap](docs/quantitative-model-roadmap.md) remains the
+source of truth for model gates and unfinished integration work. A chapter or
+kernel being present does not by itself close every release-level exit gate.

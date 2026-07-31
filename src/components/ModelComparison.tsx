@@ -4,22 +4,22 @@ import {
 } from "../lib/format";
 import { comparisonDirection } from "../lib/model-comparison";
 import type {
-  SimulationMetrics,
-  SimulationModel,
-  SimulationResult,
-} from "../types/simulation";
+  PortfolioProjectionResult,
+  ProjectionMetrics,
+} from "../labs/portfolio-projection-model";
+import type { PortfolioProjectionModel } from "../types/portfolio-projection";
 
 interface ModelComparisonProps {
-  result: SimulationResult;
+  result: PortfolioProjectionResult;
 }
 
 interface ComparisonRow {
   label: string;
   note: string;
-  format: (metrics: SimulationMetrics) => string;
+  format: (metrics: ProjectionMetrics) => string;
   delta: (
-    hmm: SimulationMetrics,
-    constant: SimulationMetrics,
+    hmm: ProjectionMetrics,
+    constant: ProjectionMetrics,
   ) => number | null;
   formatDelta: (value: number | null) => string;
   lowerIsBetter?: boolean;
@@ -71,11 +71,11 @@ const rows: ComparisonRow[] = [
     lowerIsBetter: true,
   },
   {
-    label: "Expected shortfall",
+    label: "Tail capital shortfall",
     note: "Average loss versus contributions in the worst 5% of endings",
-    format: (metrics) => formatPercent(metrics.expectedShortfall, 1),
+    format: (metrics) => formatPercent(metrics.tailCapitalShortfall, 1),
     delta: (hmm, constant) =>
-      hmm.expectedShortfall - constant.expectedShortfall,
+      hmm.tailCapitalShortfall - constant.tailCapitalShortfall,
     formatDelta: (value) => signedPoints(value ?? 0),
     lowerIsBetter: true,
   },
@@ -105,7 +105,7 @@ const rows: ComparisonRow[] = [
   },
 ];
 
-const MODEL_LABELS: Record<SimulationModel, string> = {
+const MODEL_LABELS: Record<PortfolioProjectionModel, string> = {
   constant: "Standard Monte Carlo",
   hmm: "HMM Monte Carlo",
 };

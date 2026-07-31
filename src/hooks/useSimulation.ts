@@ -1,116 +1,95 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type {
-  SimulationInputs,
-  SimulationResult,
-  SimulationWorkerResponse,
-} from "../types/simulation";
+import type { PortfolioLabRun } from "../lib/portfolio-lab/contracts";
+import { createWebWorkerPortfolioLabRunner } from "../lib/portfolio-lab/worker-runner";
+import {
+  buildPortfolioProjectionRequest,
+  presentPortfolioProjectionResult,
+  type PortfolioProjectionResult,
+} from "../labs/portfolio-projection-model";
+import type { PortfolioProjectionInputs } from "../types/portfolio-projection";
 
 export type SimulationStatus = "idle" | "running" | "ready" | "error";
 
 interface SimulationState {
-  result: SimulationResult | null;
-  previousResult: SimulationResult | null;
+  result: PortfolioProjectionResult | null;
+  previousResult: PortfolioProjectionResult | null;
   status: SimulationStatus;
   error: string | null;
-  run: (inputs: SimulationInputs) => void;
+  run: (inputs: PortfolioProjectionInputs) => void;
 }
 
+const runner = createWebWorkerPortfolioLabRunner();
+
 export function useSimulation(): SimulationState {
-  const workerRef = useRef<Worker | null>(null);
-  const requestRef = useRef(0);
   const mountedRef = useRef(false);
-  const runningRef = useRef(false);
-  const resultRef = useRef<SimulationResult | null>(null);
-  const [result, setResult] = useState<SimulationResult | null>(null);
+  const requestRef = useRef(0);
+  const activeRunRef = useRef<PortfolioLabRun | null>(null);
+  const resultRef = useRef<PortfolioProjectionResult | null>(null);
+  const [result, setResult] = useState<PortfolioProjectionResult | null>(null);
   const [previousResult, setPreviousResult] =
-    useState<SimulationResult | null>(null);
+    useState<PortfolioProjectionResult | null>(null);
   const [status, setStatus] = useState<SimulationStatus>("idle");
   const [error, setError] = useState<string | null>(null);
 
-  const createWorker = useCallback(() => {
-    const worker = new Worker(
-      new URL("../workers/simulation.worker.ts", import.meta.url),
-      { type: "module" },
-    );
-
-    worker.onmessage = (event: MessageEvent<SimulationWorkerResponse>) => {
-      if (!mountedRef.current || event.data.id !== requestRef.current) {
-        return;
-      }
-
-      if (event.data.error || !event.data.result) {
-        runningRef.current = false;
-        setStatus("error");
-        setError(
-          event.data.error ??
-            "The simulation did not return a result. Try running it again.",
-        );
-        return;
-      }
-
-      runningRef.current = false;
-      const nextResult = event.data.result;
-      const priorResult = resultRef.current;
-      if (priorResult) {
-        setPreviousResult(priorResult);
-      }
-      resultRef.current = nextResult;
-      setResult(nextResult);
-      setStatus("ready");
-      setError(null);
-    };
-
-    worker.onerror = () => {
-      if (!mountedRef.current || workerRef.current !== worker) return;
-      runningRef.current = false;
-      workerRef.current = null;
-      worker.terminate();
-      setStatus("error");
-      setError(
-        "The simulation worker stopped unexpectedly. Run it again to restart the model.",
-      );
-    };
-
-    workerRef.current = worker;
-    return worker;
-  }, []);
-
   useEffect(() => {
     mountedRef.current = true;
-    createWorker();
-
     return () => {
       mountedRef.current = false;
-      runningRef.current = false;
-      workerRef.current?.terminate();
-      workerRef.current = null;
+      requestRef.current += 1;
+      activeRunRef.current?.cancel();
+      activeRunRef.current = null;
     };
-  }, [createWorker]);
+  }, []);
 
-  const run = useCallback((inputs: SimulationInputs) => {
-    if (runningRef.current && workerRef.current) {
-      workerRef.current.terminate();
-      workerRef.current = null;
-    }
-    const worker = workerRef.current ?? createWorker();
-
-    const id = requestRef.current + 1;
-    requestRef.current = id;
-    runningRef.current = true;
+  const run = useCallback((inputs: PortfolioProjectionInputs) => {
+    const requestId = requestRef.current + 1;
+    requestRef.current = requestId;
+    activeRunRef.current?.cancel();
     setStatus("running");
     setError(null);
+
+    let nextRun: PortfolioLabRun;
     try {
-      worker.postMessage({ id, inputs });
+      nextRun = runner.run(buildPortfolioProjectionRequest(inputs));
     } catch {
-      runningRef.current = false;
-      worker.terminate();
-      workerRef.current = null;
       setStatus("error");
-      setError(
-        "The simulation could not start. Run it again to restart the model.",
-      );
+      setError("The simulation could not start. Check the scenario and try again.");
+      return;
     }
-  }, [createWorker]);
+
+    activeRunRef.current = nextRun;
+    void nextRun.outcome.then((outcome) => {
+      if (!mountedRef.current || requestRef.current !== requestId) return;
+      activeRunRef.current = null;
+
+      if (!outcome.ok) {
+        setStatus("error");
+        setError(formatProblem(outcome.problem.code, outcome.problem.message));
+        return;
+      }
+
+      try {
+        const nextResult = presentPortfolioProjectionResult(
+          outcome.result,
+          inputs,
+        );
+        const priorResult = resultRef.current;
+        if (priorResult) setPreviousResult(priorResult);
+        resultRef.current = nextResult;
+        setResult(nextResult);
+        setStatus("ready");
+        setError(null);
+      } catch {
+        setStatus("error");
+        setError("The simulation returned an incomplete comparison. Try again.");
+      }
+    });
+  }, []);
 
   return { result, previousResult, status, error, run };
+}
+
+function formatProblem(code: string, message: string): string {
+  if (code === "CANCELLED") return "The simulation was cancelled.";
+  return `${message} (${code})`;
 }

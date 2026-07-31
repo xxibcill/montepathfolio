@@ -1,4 +1,4 @@
-import type { SimulationInputs } from "../types/simulation";
+import type { PortfolioProjectionInputs } from "../types/portfolio-projection";
 import { transitionMatricesEqual } from "./regimes";
 
 export type ChangeKey =
@@ -17,8 +17,14 @@ export type ChangeKey =
 
 interface ChangeDescriptor {
   label: string;
-  headline: (before: SimulationInputs, after: SimulationInputs) => string;
-  reason: (before: SimulationInputs, after: SimulationInputs) => string;
+  headline: (
+    before: PortfolioProjectionInputs,
+    after: PortfolioProjectionInputs,
+  ) => string;
+  reason: (
+    before: PortfolioProjectionInputs,
+    after: PortfolioProjectionInputs,
+  ) => string;
 }
 
 const CHANGE_DESCRIPTORS: Record<ChangeKey, ChangeDescriptor> = {
@@ -108,8 +114,8 @@ const CHANGE_DESCRIPTORS: Record<ChangeKey, ChangeDescriptor> = {
 };
 
 export function changedFields(
-  before: SimulationInputs,
-  after: SimulationInputs,
+  before: PortfolioProjectionInputs,
+  after: PortfolioProjectionInputs,
 ): ChangeKey[] {
   const changes: ChangeKey[] = [];
 
@@ -165,8 +171,8 @@ export function changedFields(
 }
 
 export function primaryChange(
-  before: SimulationInputs,
-  after: SimulationInputs,
+  before: PortfolioProjectionInputs,
+  after: PortfolioProjectionInputs,
   changes: ChangeKey[],
 ): string {
   if (changes.length > 1) {
@@ -182,8 +188,8 @@ export function primaryChange(
 }
 
 export function reasonForChange(
-  before: SimulationInputs,
-  after: SimulationInputs,
+  before: PortfolioProjectionInputs,
+  after: PortfolioProjectionInputs,
   changes: ChangeKey[],
 ): string {
   if (changes.length !== 1) {
@@ -196,8 +202,8 @@ export function reasonForChange(
 }
 
 function allocationReason(
-  before: SimulationInputs,
-  after: SimulationInputs,
+  before: PortfolioProjectionInputs,
+  after: PortfolioProjectionInputs,
 ): string {
   const increasesStocks = after.stockAllocation > before.stockAllocation;
   const emphasizedAsset = increasesStocks ? after.stocks : after.bonds;

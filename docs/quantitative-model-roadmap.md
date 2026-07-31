@@ -1,8 +1,10 @@
 # Quantitative Simulation Laboratory Roadmap
 
-Status: planning  
-Last updated: 2026-07-31  
-Scope: architecture and implementation order; no new model is implemented by this document
+Status: educational implementation complete — all seven release families have learner-facing model verticals; intentionally deferred production extensions remain out of scope
+
+Last updated: 2026-07-31
+
+Scope: architecture, implementation order, and evidence ledger; no model is implemented by this document
 
 ## 1. Goal
 
@@ -37,12 +39,13 @@ labels suggest.
 | Reproducibility | Versioned semantic streams provide shared shocks, isolated roles, and stable horizon prefixes | Preserve these behaviors as interface invariants |
 | Execution | Pure TypeScript runs in a browser Web Worker | Retain worker execution and add an in-process test adapter |
 
-The compatibility `SimulationInputs` and `SimulationResult` types must not be
-widened for future models. They still carry unused HMM configuration for the GBM
-case, hard-code two comparison keys, and expose HMM-only data through nullable or
-empty common fields. The compatibility `runSimulation` adapter explicitly
-requests both current cases for the UI; native portfolio-lab callers execute only
-the cases they request.
+The deprecated compatibility `SimulationInputs` and `SimulationResult` types
+must not be widened for future models. They still carry unused HMM configuration
+for the GBM case, hard-code two comparison keys, and expose HMM-only data through
+nullable or empty common fields. The production accumulation UI now builds an
+explicit native GBM/HMM request and derives its chart view from the discriminated
+result. The old adapter is quarantined without a production caller only to
+preserve pre-existing local edits.
 
 ## 3. Architecture decision
 
@@ -282,9 +285,9 @@ Work:
    - stale worker-response handling.
 2. Rename the internal `constant` model to `gbm`, retaining a persisted-scenario
    migration and the user-facing “Standard Monte Carlo” label.
-3. Rename the current `expectedShortfall` metric to
-   `tailCapitalShortfall` or another explicit name. Reserve “Expected
-   Shortfall” for standard loss-tail CVaR.
+3. Keep the current capital-relative tail measure named
+   `tailCapitalShortfall` across native and compatibility contracts. Reserve
+   “Expected Shortfall” for standard loss-tail CVaR.
 4. Introduce versioned portfolio-lab request, result, warning, and error types.
 5. Add specification tests proving case-order and case-addition invariance.
 6. Return primary-case detail plus an array of explicit comparison summaries.
@@ -875,9 +878,10 @@ When implementation begins, create work in this order:
 5. **GBM/HMM migration**
    - Move current models behind the new seam and remove unconditional dual-model
      execution.
-6. **Metric terminology migration**
-   - Rename the current tail capital-shortfall measure before standard CVaR is
-     introduced.
+6. **Metric terminology migration** — complete
+   - The current measure is named `tailCapitalShortfall` throughout the engine,
+     compatibility contract, and UI. “Expected Shortfall” remains reserved for
+     standard loss-tail CVaR.
 7. **Jump-diffusion vertical**
    - Kernel, limiting tests, portfolio case, jump diagnostics, tail comparison,
      and model note.
@@ -891,3 +895,76 @@ When implementation begins, create work in this order:
 This sequence delivers visible modeling value early while establishing seams
 that the remaining roadmap can reuse without turning the current simulator into
 a monolith.
+
+## 13. Implementation ledger — 2026-07-31
+
+This ledger records repository evidence without rewriting the roadmap's target
+state. “Standalone implemented” means a versioned TypeScript API, runtime
+validation, focused tests, a model note, and a learner chapter exist. It does
+**not** mean that every release-level exit gate, cross-model handoff, planned
+visual, imported-data workflow, or production calibration is complete.
+
+### 13.1 Learning application and shared foundation
+
+| Capability | Evidence | Status and boundary |
+| --- | --- | --- |
+| Six lazy laboratories and 31 chapters | [`catalog.ts`](../src/labs/catalog.ts), [`routes.ts`](../src/labs/routes.ts), and [`App.tsx`](../src/App.tsx) | Implemented. Portfolio projection has nine chapters including the preserved accumulation simulator; Risk has two; Construction six; Derivatives five; Rates & Credit five; and Trading four. |
+| Shared numerical foundation | [`core.ts`](../src/lib/quant/core.ts) and [`core.test.ts`](../src/lib/quant/core.test.ts) | Implemented for the current consumers: validation, moments and R-7 quantiles, matrix operations/factorization, distributions, root finding, optimization helpers, and versioned semantic random streams. It is not a general-purpose scientific-computing library. |
+| Advanced chapter worker | [`lesson-worker-protocol.ts`](../src/labs/lesson-worker-protocol.ts), [`lesson.worker.ts`](../src/workers/lesson.worker.ts), and [`useLessonWorker.ts`](../src/hooks/useLessonWorker.ts) | Implemented with structured failures, cancellation by worker termination, stale-response suppression, and bounded lesson results. |
+| Bounded local CSV import | [`DatasetImport.tsx`](../src/components/DatasetImport.tsx), [`imported-datasets.ts`](../src/labs/imported-datasets.ts), [`imported-datasets.test.ts`](../src/labs/imported-datasets.test.ts), and [`lesson-worker-protocol.test.ts`](../src/labs/lesson-worker-protocol.test.ts) | Implemented for GARCH calibration, historical bootstrap, ordered-regime fitting, VaR backtesting, and factor analysis. Files are capped at 2 MB, parsed in the worker, labeled `user-imported`, and represented in saved scenarios by filename/contract reference rather than raw contents. |
+| Learner documentation | [Model notes](models/README.md) and [references](models/references.md) | Implemented for all six laboratories. Notes state equations, units, implementation choices, gates, intuition, assumptions, limitations, and educational disclaimers. |
+| Scenario persistence and export | [`QuantLabWorkspace.tsx`](../src/labs/QuantLabWorkspace.tsx) | Implemented per laboratory for normalized inputs and compact summaries. Large raw path matrices are not persisted by default. |
+
+### 13.2 Release evidence and remaining gates
+
+| Roadmap release | Implemented evidence | Release-level status |
+| --- | --- | --- |
+| Release 0 — portfolio seam | Native contracts, market/accounting/analytics separation, in-process runner, browser-worker runner, semantic streams, case invariants, structured problems, and resource preflight live in [`src/lib/portfolio-lab`](../src/lib/portfolio-lab). The browser baseline is recorded in [`portfolio-lab-baseline.md`](benchmarks/portfolio-lab-baseline.md). | **Implemented.** The original accumulation route now constructs explicit native GBM/HMM cases through [`portfolio-projection-model.ts`](../src/labs/portfolio-projection-model.ts), executes the worker runner, and consumes a native-result presentation model. Persisted field names remain compatible. The old worker is deleted; the deprecated adapter/types have no production caller and remain quarantined only to preserve pre-existing local edits, as recorded in the [migration record](legacy-portfolio-lab-adapter-removal.md). |
+| Release 1 — jump, GARCH, mean-variance | Jump diffusion, GARCH simulation/calibration, and the standalone versioned Student-t innovation comparison are in [`market-models.ts`](../src/lib/quant/market-models.ts); the GARCH chapter can fit a bounded user-imported return series. Mean-variance/frontier allocation is in [`construction.ts`](../src/lib/quant/construction.ts). Native [`advanced-contracts.ts`](../src/lib/portfolio-lab/advanced-contracts.ts) and [`advanced-runner.ts`](../src/lib/portfolio-lab/advanced-runner.ts) expose GBM, jump, and GARCH as explicitly requested portfolio cases without mutating request@1. Focused evidence is in [`market-models.test.ts`](../src/lib/quant/market-models.test.ts), [`construction.test.ts`](../src/lib/quant/construction.test.ts), and [`advanced-runner.test.ts`](../src/lib/portfolio-lab/advanced-runner.test.ts). | **Implemented.** Request@2 adds generalized holdings/accounting, grouped metrics, discriminated diagnostics, structured problems, resource preflight, and standard terminal-loss VaR/CVaR. The [Release 1 browser-worker record](benchmarks/release-1-model-verticals.md) measures jump diffusion, GARCH, and mean–variance against an explicit interaction budget. Mean-variance has an explicit user-triggered projection handoff rather than silently mutating a scenario. |
+| Release 2 — bootstrap, risk, retirement | IID/moving-block bootstrap and validated return datasets are in [`market-models.ts`](../src/lib/quant/market-models.ts). VaR/CVaR, attribution, rolling backtests, retirement cash flows, three withdrawal rules, allocation/rebalancing, and return-order reversal are in [`risk.ts`](../src/lib/quant/risk.ts) and [`risk.test.ts`](../src/lib/quant/risk.test.ts). Bootstrap and backtest chapters accept time-ordered local CSVs with explicit user-imported provenance. | **Standalone verticals and bounded local-import flow implemented.** Templates make the accepted shape visible; missing cells are rejected rather than silently imputed, and results remain educational and supplied-data dependent. Interactive column mapping and alternative missing-data policies are not implied. |
+| Release 3 — regimes, fat tails, dependence, composite | Student-t innovations, Gaussian and Student-t copulas, correlation validation, and the ordered HMM → GARCH → copula → jump kernel are in [`market-models.ts`](../src/lib/quant/market-models.ts), with limiting-switch tests and bounded diagnostics. The ordered-regime chapter accepts a user-imported monthly log-return series and records its snapshot provenance. Request@2 in [`advanced-runner.ts`](../src/lib/portfolio-lab/advanced-runner.ts) continues the sanctioned order through portfolio accounting and standard terminal economic-loss VaR/CVaR. The illustrative HMM payload adapter remains in [`hmm-model.ts`](../src/lib/hmm-model.ts). | **Standalone and sanctioned end-to-end native composition implemented.** Tagged composite diagnostics remain separate from common portfolio results, all simpler cases are explicit, and request@1 stays frozen. HMM output is illustrative or explicitly user-imported; no bundled value is presented as live. |
+| Release 4 — derivatives | Black-Scholes prices/Greeks/surfaces, CRR European/American trees, Monte Carlo European/Asian/barrier/basket/lookback pricing with confidence intervals and variance reduction, Heston simulation/pricing, and composable named strategies are in [`derivatives.ts`](../src/lib/quant/derivatives.ts) and [`derivatives.test.ts`](../src/lib/quant/derivatives.test.ts). | **Implemented.** Black-Scholes exposes dividend yield and bounded spot/volatility/time surface slices. Heston separates spot, variance, terminal-distribution, and leverage-effect views. The UI intentionally bounds stored tree/surface detail, while calibration and semi-analytical Heston pricing remain explicitly out of scope. |
+| Release 5 — rates and credit | Exact-transition Vasicek, nonnegative CIR, model comparison, Nelson-Siegel fitting and named shocks, constant/piecewise hazard credit and risky bonds, and Merton structural credit are in [`rates-credit.ts`](../src/lib/quant/rates-credit.ts) and [`rates-credit.test.ts`](../src/lib/quant/rates-credit.test.ts). | **Model vertical implemented.** Short-rate, curve, reduced-form, and structural-credit results remain separate. Inputs are illustrative parameters rather than a live curve or issuer calibration. |
+| Release 6 — portfolio intelligence | CAPM, aligned and rolling factor regressions, factor return/risk attribution and shocks, equal-risk-contribution allocation, bounded fractional Kelly, and Black-Litterman posterior allocation are in [`construction.ts`](../src/lib/quant/construction.ts) and its tests. The factor chapter can split a combined local CSV's `asset:` and `factor:` columns into separately provenance-labelled datasets before timestamp alignment. | **Model vertical and bounded local factor import implemented.** Factors are data-defined, but no bundled or imported identifier is asserted to be a live market factor. Estimates, investor views, and model-implied quantities are labeled separately. |
+| Release 7 — trading and microstructure | Exact-transition OU simulation and OLS fit, deterministic price-time-priority event replay, per-event accounting snapshots, optional maker/taker fees, bounded ladders, illustrative single-asset risk-budget and other agent rules, fee-inclusive wealth history, and numerically stable analytical Almgren-Chriss schedules are in [`trading.ts`](../src/lib/quant/trading.ts) and [`trading.test.ts`](../src/lib/quant/trading.test.ts). | **Standalone verticals implemented; venue coupling deferred.** The roadmap itself places order-book execution comparison after the analytical Almgren-Chriss model. The book and agents are stylized deterministic scenarios, not a calibrated venue or evidence of a profitable strategy; the deprecated `risk-parity` agent name is only a compatibility alias because a one-asset book cannot form a true risk-parity allocation. |
+
+### 13.3 Verification evidence
+
+The repository's focused tests follow the five verification layers in section 8:
+small deterministic fixtures, analytical or limiting cases, fixed-seed
+statistical checks, invariants, and worker/integration behavior. The commands
+remain:
+
+```bash
+npm run lint
+npm test
+npm run build
+```
+
+`npm run check` runs all three. `npm run benchmark:portfolio` records the native
+GBM/HMM production worker boundary; `npm run benchmark:release1` records the
+jump, GARCH, and mean–variance lesson-worker workloads and their interaction
+budgets. A model or chapter should be described as complete only after the
+current working tree passes those checks; this ledger names evidence locations
+but is not a substitute for running them.
+
+### 13.4 Explicitly deferred extensions and quarantine cleanup
+
+1. Delete the quarantined legacy adapter/types/tests only after their pre-existing
+   local edits have been intentionally reviewed or archived. They have no
+   production caller and do not block the native accumulation workflow; see the
+   [migration record](legacy-portfolio-lab-adapter-removal.md).
+2. Extend the learner-facing request@2 comparison beyond its current
+   composite-versus-GBM experiment when direct jump-versus-GBM or
+   GARCH-versus-constant portfolio-accounting lessons are needed. Keep request@1
+   frozen; new model kinds require another contract version and standalone gates.
+3. Extend the bounded template-based CSV flow with interactive column mapping or
+   alternative missing-data/alignment policies only if a real learning workflow
+   needs them; the current import intentionally rejects missing cells and keeps
+   raw file content out of persistence.
+4. Add further model-specific browser performance records only when a workload
+   justifies its own budget. The GBM/HMM and Release 1 records must not be
+   generalized to every laboratory.
+5. Treat live data, remote calibration, tax/suitability logic, exchange-grade
+   matching, and production pricing/risk controls as new scoped projects, not as
+   implied capabilities of this educational implementation.

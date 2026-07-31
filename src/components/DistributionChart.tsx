@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useCanvasSize } from "../hooks/useCanvasSize";
+import { useThemeRevision } from "../hooks/useTheme";
 import {
   CHART_COLORS as COLORS,
   compactCurrency,
@@ -7,10 +8,10 @@ import {
   fullCurrency,
   niceCeiling,
 } from "../lib/chart";
-import type { SimulationResult } from "../types/simulation";
+import type { PortfolioProjectionResult } from "../labs/portfolio-projection-model";
 
 export interface DistributionChartProps {
-  result: SimulationResult;
+  result: PortfolioProjectionResult;
   targetValue?: number;
   className?: string;
 }
@@ -41,6 +42,7 @@ export function DistributionChart({
     minHeight: 270,
     maxHeight: 380,
   });
+  const themeRevision = useThemeRevision();
   const target = targetValue ?? result.inputs.targetValue;
   const values = useMemo(
     () =>
@@ -278,7 +280,7 @@ export function DistributionChart({
       targetLegendX + 26,
       secondLegendY,
     );
-  }, [dpr, height, median, target, values, width]);
+  }, [dpr, height, median, target, themeRevision, values, width]);
 
   return (
     <figure

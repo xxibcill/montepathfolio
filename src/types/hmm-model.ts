@@ -1,4 +1,4 @@
-import type { Regime } from "./simulation";
+import type { PortfolioProjectionRegime } from "./portfolio-projection";
 
 export interface HMMModelMetadata {
   name: string;
@@ -14,7 +14,7 @@ export interface HMMModelAssetState {
 
 export interface HMMModelState {
   id: number;
-  label: Regime;
+  label: PortfolioProjectionRegime;
   stocks: HMMModelAssetState;
   bonds: HMMModelAssetState;
   correlation: number;
@@ -23,7 +23,7 @@ export interface HMMModelState {
 export interface HMMHistoryObservation {
   date: string;
   normalizedPrice: number;
-  state: Regime;
+  state: PortfolioProjectionRegime;
 }
 
 export type ThreeStateVector = [number, number, number];

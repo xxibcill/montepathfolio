@@ -7,19 +7,19 @@ import {
   updateTransitionProbability,
 } from "../lib/regimes";
 import type {
-  HMMConfiguration,
-  Regime,
-} from "../types/simulation";
+  PortfolioProjectionHmmConfiguration,
+  PortfolioProjectionRegime,
+} from "../types/portfolio-projection";
 
 interface TransitionMatrixEditorProps {
-  configuration: HMMConfiguration;
+  configuration: PortfolioProjectionHmmConfiguration;
   stockAllocation: number;
-  onChange: (configuration: HMMConfiguration) => void;
+  onChange: (configuration: PortfolioProjectionHmmConfiguration) => void;
 }
 
 interface TransitionCellProps {
-  fromRegime: Regime;
-  toRegime: Regime;
+  fromRegime: PortfolioProjectionRegime;
+  toRegime: PortfolioProjectionRegime;
   value: number;
   onChange: (value: number) => void;
 }
