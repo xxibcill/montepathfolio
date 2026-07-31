@@ -9,6 +9,10 @@ import type {
   SimulationMetrics,
   SimulationResult,
 } from "../types/simulation";
+import {
+  createPortfolioRandomSource,
+  type PortfolioRandomSource,
+} from "./portfolio-lab/semantic-random";
 import { REGIME_ORDER } from "./regimes";
 
 const DEFAULT_PATH_COUNT = 1_000;
@@ -44,8 +48,8 @@ interface MetricSources {
 
 export function runSimulation(rawInputs: SimulationInputs): SimulationResult {
   const { inputs, monthCount } = prepareSimulation(rawInputs);
-  // Both models use identical asset-shock streams. The HMM draws regimes from a
-  // separate seeded stream so comparison deltas reflect the model, not luck.
+  // Both models address identical diffusion shocks. Regime draws use distinct
+  // semantic addresses so comparison deltas reflect the model, not draw order.
   const pathsByModel: Record<SimulationModel, PathAnalysis[]> = {
     constant: simulatePaths(inputs, monthCount, "constant"),
     hmm: simulatePaths(inputs, monthCount, "hmm"),
@@ -136,9 +140,9 @@ function simulatePaths(
   monthCount: number,
   modelType: SimulationModel,
 ): PathAnalysis[] {
-  const models = createPathModels(inputs);
+  const context = createPathSimulationContext(inputs, monthCount, modelType);
   return Array.from({ length: inputs.pathCount }, (_, pathIndex) =>
-    simulatePathAtIndex(inputs, monthCount, modelType, models, pathIndex),
+    simulatePath(context, pathIndex),
   );
 }
 
@@ -148,16 +152,14 @@ async function simulatePathsCooperatively(
   modelType: SimulationModel,
   signal: AbortSignal,
 ): Promise<PathAnalysis[]> {
-  const models = createPathModels(inputs);
+  const context = createPathSimulationContext(inputs, monthCount, modelType);
   const paths: PathAnalysis[] = [];
 
   await Promise.resolve();
   throwIfCancelled(signal);
 
   for (let pathIndex = 0; pathIndex < inputs.pathCount; pathIndex += 1) {
-    paths.push(
-      simulatePathAtIndex(inputs, monthCount, modelType, models, pathIndex),
-    );
+    paths.push(simulatePath(context, pathIndex));
 
     if ((pathIndex + 1) % COOPERATIVE_PATH_BATCH_SIZE === 0) {
       await yieldToEventLoop();
@@ -172,6 +174,28 @@ async function simulatePathsCooperatively(
 interface PathModels {
   readonly constant: MonthlyModel;
   readonly regimes: Record<Regime, MonthlyModel>;
+}
+
+interface PathSimulationContext {
+  readonly inputs: SimulationInputs;
+  readonly monthCount: number;
+  readonly modelType: SimulationModel;
+  readonly models: PathModels;
+  readonly randomSource: PortfolioRandomSource;
+}
+
+function createPathSimulationContext(
+  inputs: SimulationInputs,
+  monthCount: number,
+  modelType: SimulationModel,
+): PathSimulationContext {
+  return {
+    inputs,
+    monthCount,
+    modelType,
+    models: createPathModels(inputs),
+    randomSource: createPortfolioRandomSource(inputs.seed),
+  };
 }
 
 function createPathModels(inputs: SimulationInputs): PathModels {
@@ -191,27 +215,6 @@ function createPathModels(inputs: SimulationInputs): PathModels {
   return { constant: constantModel, regimes: regimeModels };
 }
 
-function simulatePathAtIndex(
-  inputs: SimulationInputs,
-  monthCount: number,
-  modelType: SimulationModel,
-  models: PathModels,
-  pathIndex: number,
-): PathAnalysis {
-  const pathSeed = derivePathSeed(inputs.seed, pathIndex);
-  const regimeSeed = derivePathSeed(inputs.seed ^ 0x51f15e, pathIndex);
-
-  return simulatePath(
-    inputs,
-    monthCount,
-    modelType,
-    models.constant,
-    models.regimes,
-    createNormalGenerator(pathSeed),
-    createUniformGenerator(regimeSeed),
-  );
-}
-
 function throwIfCancelled(signal: AbortSignal): void {
   if (signal.aborted) {
     throw new SimulationCancelledError();
@@ -225,14 +228,10 @@ function yieldToEventLoop(): Promise<void> {
 }
 
 function simulatePath(
-  inputs: SimulationInputs,
-  monthCount: number,
-  modelType: SimulationModel,
-  constantModel: MonthlyModel,
-  regimeModels: Record<Regime, MonthlyModel>,
-  nextNormal: () => number,
-  nextRegimeUniform: () => number,
+  context: PathSimulationContext,
+  pathIndex: number,
 ): PathAnalysis {
+  const { inputs, monthCount, modelType, models, randomSource } = context;
   let stockValue = inputs.initialCapital * inputs.stockAllocation;
   let bondValue = inputs.initialCapital - stockValue;
   let navStockValue = inputs.stockAllocation;
@@ -241,7 +240,10 @@ function simulatePath(
   const navValues = [1];
   let regime =
     modelType === "hmm"
-      ? sampleRegime(inputs.hmm.currentStateProbabilities, nextRegimeUniform())
+      ? sampleRegime(
+          inputs.hmm.currentStateProbabilities,
+          randomSource.uniformAt(pathIndex, 0, "regime/initial"),
+        )
       : null;
   const regimes: Regime[] = regime ? [regime] : [];
 
@@ -249,15 +251,24 @@ function simulatePath(
     if (regime) {
       regime = sampleRegime(
         inputs.hmm.transitionMatrix[regime],
-        nextRegimeUniform(),
+        randomSource.uniformAt(pathIndex, month, "regime/transition"),
       );
       regimes.push(regime);
     }
-    const model = regime ? regimeModels[regime] : constantModel;
-    const stockShock = nextNormal();
+    const model = regime ? models.regimes[regime] : models.constant;
+    const stockShock = randomSource.normalAt(
+      pathIndex,
+      month,
+      "diffusion/stocks",
+    );
     const bondShock =
       model.correlation * stockShock +
-      model.independentBondWeight * nextNormal();
+      model.independentBondWeight *
+        randomSource.normalAt(
+          pathIndex,
+          month,
+          "diffusion/bonds-independent",
+        );
     const stockGrowth = Math.exp(
       model.stockDrift + model.stockDiffusion * stockShock,
     );
@@ -561,51 +572,6 @@ function countWhere(
     (count, value) => count + Number(predicate(value)),
     0,
   );
-}
-
-function createNormalGenerator(seed: number): () => number {
-  const nextUniform = createUniformGenerator(seed);
-  let spareNormal: number | null = null;
-
-  return () => {
-    if (spareNormal !== null) {
-      const normal = spareNormal;
-      spareNormal = null;
-      return normal;
-    }
-
-    let firstUniform = nextUniform();
-    while (firstUniform === 0) {
-      firstUniform = nextUniform();
-    }
-    const secondUniform = nextUniform();
-    const magnitude = Math.sqrt(-2 * Math.log(firstUniform));
-    const angle = 2 * Math.PI * secondUniform;
-    spareNormal = magnitude * Math.sin(angle);
-
-    return magnitude * Math.cos(angle);
-  };
-}
-
-function derivePathSeed(seed: number, pathIndex: number): number {
-  let value =
-    (Math.trunc(seed) + Math.imul(pathIndex + 1, 0x9e3779b9)) | 0;
-  value = Math.imul(value ^ (value >>> 16), 0x85ebca6b);
-  value = Math.imul(value ^ (value >>> 13), 0xc2b2ae35);
-
-  return (value ^ (value >>> 16)) >>> 0;
-}
-
-function createUniformGenerator(seed: number): () => number {
-  let state = Math.trunc(seed) >>> 0;
-
-  return () => {
-    state = (state + 0x6d2b79f5) | 0;
-    let value = Math.imul(state ^ (state >>> 15), 1 | state);
-    value ^= value + Math.imul(value ^ (value >>> 7), 61 | value);
-
-    return ((value ^ (value >>> 14)) >>> 0) / 4_294_967_296;
-  };
 }
 
 function normalizeInputs(rawInputs: SimulationInputs): SimulationInputs {

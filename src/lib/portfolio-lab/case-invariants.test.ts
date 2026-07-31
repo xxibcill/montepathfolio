@@ -11,6 +11,7 @@ import {
   type PortfolioLabRun,
 } from "./contracts";
 import { createLegacyPortfolioLabRunner } from "./legacy-runner";
+import { PORTFOLIO_RANDOM_STREAM_VERSION } from "./semantic-random";
 
 const BASELINE_CASE_ID = asPortfolioCaseId("baseline");
 const REGIMES_CASE_ID = asPortfolioCaseId("regimes");
@@ -116,6 +117,9 @@ describe("portfolio-lab case invariants", () => {
       CONSERVATIVE_CASE_ID,
       REGIMES_CASE_ID,
     ]);
+    expect(reordered.provenance.randomStreamVersion).toBe(
+      PORTFOLIO_RANDOM_STREAM_VERSION,
+    );
   });
 
   it("keeps existing case results stable when a comparison is added", async () => {
