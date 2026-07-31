@@ -139,6 +139,13 @@ For test watch mode:
 npm run test:watch
 ```
 
+## Roadmap
+
+The planned evolution from the current GBM/HMM portfolio simulator into focused
+portfolio, risk, derivatives, rates and credit, and trading laboratories is
+documented in
+[`docs/quantitative-model-roadmap.md`](docs/quantitative-model-roadmap.md).
+
 ## Project structure
 
 ```text
