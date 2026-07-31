@@ -65,6 +65,18 @@ describe("semantic portfolio random streams", () => {
     expect(new Set(draws)).toHaveLength(draws.length);
   });
 
+  it("does not alias negative seeds with unsigned counterparts", () => {
+    const negativeSeedAddress = { ...ADDRESS, seed: -1 };
+    const unsignedSeedAddress = { ...ADDRESS, seed: 0xffff_ffff };
+
+    expect(
+      semanticNormalAt(negativeSeedAddress, "diffusion/stocks"),
+    ).not.toBe(semanticNormalAt(unsignedSeedAddress, "diffusion/stocks"));
+    expect(
+      semanticUniformAt(negativeSeedAddress, "regime/initial"),
+    ).not.toBe(semanticUniformAt(unsignedSeedAddress, "regime/initial"));
+  });
+
   it("does not let unrelated draws shift an existing address", () => {
     const expected = semanticNormalAt(ADDRESS, "diffusion/stocks");
 

@@ -110,7 +110,7 @@ function mixString(hash: number, value: string): number {
 function mixInteger(hash: number, value: number): number {
   const integer = Math.trunc(value);
   const lowWord = integer >>> 0;
-  const highWord = Math.trunc(integer / UINT32_RANGE) >>> 0;
+  const highWord = Math.floor(integer / UINT32_RANGE) >>> 0;
 
   return mixWord(mixWord(hash, lowWord), highWord);
 }
