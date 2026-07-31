@@ -1,4 +1,17 @@
-import type { LabId } from "./routes";
+import type { LabId } from "./lab-registry";
+import type {
+  CalibrationSnapshot,
+  GarchParameters,
+  RegimeCalibrationResult,
+} from "../lib/quant/market-models";
+
+export type LessonCalibrationSnapshot =
+  | (CalibrationSnapshot<GarchParameters> & {
+      readonly modelContract: "market-model/garch-1-1@1";
+    })
+  | (CalibrationSnapshot<RegimeCalibrationResult> & {
+      readonly modelContract: "market-model/ordered-regimes@1";
+    });
 
 export type ParameterFormat =
   | "number"
@@ -88,6 +101,8 @@ export interface LessonOutput {
   readonly warnings: readonly string[];
   readonly provenance: readonly string[];
   readonly compactSummary: Readonly<Record<string, string | number | boolean>>;
+  /** Immutable fitted parameters may be persisted without retaining raw data. */
+  readonly calibrationSnapshot?: LessonCalibrationSnapshot;
 }
 
 export interface LessonDefinition {
@@ -120,6 +135,8 @@ export interface LabDefinition {
   readonly number: string;
   readonly title: string;
   readonly subtitle: string;
+  readonly indexSubtitle: string;
+  readonly question: string;
   readonly introduction: string;
   readonly lessonIds: readonly string[];
 }

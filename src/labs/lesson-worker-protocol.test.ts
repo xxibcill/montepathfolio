@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  isLessonCalibrationSnapshot,
   isLessonDataAttachment,
   isLessonWorkerResponse,
   LESSON_DATA_ATTACHMENT_CONTRACT,
@@ -78,6 +79,48 @@ describe("educational lesson worker protocol", () => {
         filename: "empty.csv",
         mediaType: "text/csv",
         text: "",
+      }),
+    ).toBe(false);
+  });
+
+  it("accepts only supported immutable calibration snapshots", () => {
+    expect(
+      isLessonCalibrationSnapshot({
+        contract: "calibration-snapshot@1",
+        modelContract: "market-model/garch-1-1@1",
+        schemaVersion: 1,
+        observationFrequency: "monthly",
+        returnConvention: "simple",
+        sampleStart: "2020-01-01",
+        sampleEnd: "2025-01-01",
+        estimates: { omega: 0.001, alpha: 0.1, beta: 0.8, meanReturn: 0 },
+        fittingMethod: "fixture",
+        convergence: { converged: true, iterations: 1 },
+        warnings: [],
+        dataProvenance: { label: "Local fixture", kind: "user-imported" },
+      }),
+    ).toBe(true);
+    expect(
+      isLessonCalibrationSnapshot({
+        contract: "calibration-snapshot@1",
+        modelContract: "unsupported@1",
+        schemaVersion: 1,
+      }),
+    ).toBe(false);
+    expect(
+      isLessonCalibrationSnapshot({
+        contract: "calibration-snapshot@1",
+        modelContract: "market-model/garch-1-1@1",
+        schemaVersion: 1,
+        observationFrequency: "monthly",
+        returnConvention: "simple",
+        sampleStart: "2020-01-01",
+        sampleEnd: "2025-01-01",
+        estimates: { omega: "not-a-number", alpha: 0.1, beta: 0.8 },
+        fittingMethod: "fixture",
+        convergence: { converged: true, iterations: 1 },
+        warnings: [],
+        dataProvenance: { label: "Local fixture", kind: "user-imported" },
       }),
     ).toBe(false);
   });

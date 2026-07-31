@@ -125,6 +125,11 @@ describe("useLessonWorker request ownership", () => {
     expect(state!.output.headline).toBe("current");
     expect(state!.previous?.output.headline).toBe("initial");
     expect(state!.previous?.values).toEqual({ parameter: 1 });
+
+    act(() => state!.run({ parameter: 4 }));
+    act(() => worker.respond(success(4, "after-attachment")));
+    expect(state!.previous?.attachment?.filename).toBe("fixture.csv");
+    expect(state!.previous?.values).toEqual({ parameter: 3 });
   });
 
   it("terminates on cancel, ignores late messages, and can restart", () => {

@@ -1,13 +1,13 @@
 import {
   QUANT_CORE_VERSION,
   QuantError,
+  assertIncreasingTimestamps,
   assertFinite,
   assertIntegerInRange,
   assertNonNegative,
   assertPositive,
   assertProbability,
   cholesky,
-  clamp,
   createSemanticRandom,
   inverseNormalCdf,
   matrixVectorMultiply,
@@ -20,6 +20,7 @@ import {
 } from "./core";
 
 export const RISK_LAB_VERSION = "risk-lab@1";
+export const MAX_VAR_BACKTEST_OBSERVATIONS = 20_000;
 
 export type LossSeries = {
   readonly kind: "positive-loss";
@@ -94,7 +95,8 @@ export function calculateVarCvar(
       : simulateMonteCarloLosses(input, input.method);
   const valueAtRisk = Math.max(0, quantile(sampledLosses.values, input.confidenceLevel));
   const tail = sampledLosses.values.filter((loss) => loss >= valueAtRisk);
-  const conditionalValueAtRisk = Math.max(valueAtRisk, mean(tail));
+  const conditionalValueAtRisk =
+    tail.length === 0 ? valueAtRisk : Math.max(valueAtRisk, mean(tail));
   return envelope(input, {
     contract: "risk-lab/var-cvar-result@1",
     method: input.method.kind,
@@ -203,6 +205,13 @@ export function backtestValueAtRisk(input: VarBacktestInput): VarBacktestResult 
   if (input.method !== "historical" && input.method !== "parametric-normal") {
     throw new QuantError("INVALID_INPUT", "Unsupported VaR-backtest method.");
   }
+  if (input.returns.length > MAX_VAR_BACKTEST_OBSERVATIONS) {
+    throw new QuantError(
+      "OUT_OF_RANGE",
+      `Backtest observation limit is ${MAX_VAR_BACKTEST_OBSERVATIONS}.`,
+      "returns",
+    );
+  }
   assertIntegerInRange(
     input.estimationWindow,
     2,
@@ -216,17 +225,7 @@ export function backtestValueAtRisk(input: VarBacktestInput): VarBacktestResult 
     if (input.timestamps.length !== input.returns.length) {
       throw new QuantError("DIMENSION_MISMATCH", "Backtest timestamps must align with returns.");
     }
-    let previousTimestamp = "";
-    input.timestamps.forEach((timestamp, index) => {
-      if (!Number.isFinite(Date.parse(timestamp)) || timestamp <= previousTimestamp) {
-        throw new QuantError(
-          "INVALID_INPUT",
-          "Backtest timestamps must be valid, unique, and increasing.",
-          `timestamps.${index}`,
-        );
-      }
-      previousTimestamp = timestamp;
-    });
+    assertIncreasingTimestamps(input.timestamps);
   }
   if (input.provenance && !input.provenance.label.trim()) {
     throw new QuantError("INVALID_INPUT", "Backtest provenance needs a label.");
@@ -885,7 +884,7 @@ function chooseAnnualWithdrawal(
   } else if (rate < policy.lowerWithdrawalRate) {
     withdrawal *= 1 + policy.adjustmentRate;
   }
-  return clamp(withdrawal, 0, wealth);
+  return Math.max(0, withdrawal);
 }
 
 function envelope<Input extends { readonly contract: string }, Result>(

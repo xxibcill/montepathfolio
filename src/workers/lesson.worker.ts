@@ -1,6 +1,7 @@
 import { runLesson } from "../labs/lesson-runners";
 import { QuantError } from "../lib/quant/core";
 import {
+  isLessonCalibrationSnapshot,
   isLessonDataAttachment,
   LESSON_WORKER_PROTOCOL,
   type LessonWorkerRequest,
@@ -22,7 +23,11 @@ self.onmessage = (event: MessageEvent<LessonWorkerRequest>) => {
       !request.values ||
       typeof request.values !== "object" ||
       (request.attachment !== undefined &&
-        !isLessonDataAttachment(request.attachment))
+        !isLessonDataAttachment(request.attachment)) ||
+      (request.calibrationSnapshot !== undefined &&
+        !isLessonCalibrationSnapshot(request.calibrationSnapshot)) ||
+      (request.attachment !== undefined &&
+        request.calibrationSnapshot !== undefined)
     ) {
       response = {
         contract: LESSON_WORKER_PROTOCOL,
@@ -41,7 +46,12 @@ self.onmessage = (event: MessageEvent<LessonWorkerRequest>) => {
       contract: LESSON_WORKER_PROTOCOL,
       requestId,
       ok: true,
-      output: runLesson(request.lessonId, request.values, request.attachment),
+      output: runLesson(
+        request.lessonId,
+        request.values,
+        request.attachment,
+        request.calibrationSnapshot,
+      ),
     };
   } catch (error) {
     const quantProblem = error instanceof QuantError

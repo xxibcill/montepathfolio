@@ -9,6 +9,7 @@ import {
   type ModelWarning,
   type NumericMatrix,
   QuantError,
+  assertIncreasingTimestamps,
   addMatrices,
   assertFinite,
   assertIntegerInRange,
@@ -2564,17 +2565,7 @@ function validateAlignedFactorDataset(dataset: AlignedFactorDataset): void {
       "dataset.timestamps",
     );
   }
-  let previousTimestamp = "";
-  dataset.timestamps.forEach((timestamp, index) => {
-    if (!Number.isFinite(Date.parse(timestamp)) || timestamp <= previousTimestamp) {
-      throw new QuantError(
-        "INVALID_INPUT",
-        "Aligned timestamps must be valid, unique, and increasing.",
-        `dataset.timestamps.${index}`,
-      );
-    }
-    previousTimestamp = timestamp;
-  });
+  assertIncreasingTimestamps(dataset.timestamps, "dataset.timestamps");
   const assetColumns = validateObservationMatrix(
     dataset.assetReturnsPerPeriod,
     "dataset.assetReturnsPerPeriod",

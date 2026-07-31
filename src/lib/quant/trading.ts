@@ -512,9 +512,7 @@ export interface AgentSpec {
     | "trend"
     | "market-maker"
     | "noise"
-    | "risk-budget"
-    /** @deprecated Use `risk-budget`; a one-asset market cannot form risk parity. */
-    | "risk-parity";
+    | "risk-budget";
   readonly orderSize: number;
   readonly fundamentalValue?: number;
   /** Maximum one-step marked-to-market volatility exposure in cash units. */
@@ -1225,7 +1223,7 @@ function decideAgentOrders(
   } else if (agent.kind === "trend") {
     side = history.length < 2 || history.at(-1)! >= history.at(-2)! ? "buy" : "sell";
     rationale = "Follows the sign of the latest observed price change.";
-  } else if (agent.kind === "risk-budget" || agent.kind === "risk-parity") {
+  } else if (agent.kind === "risk-budget") {
     const estimatedVolatility = estimateRecentVolatility(
       history,
       agent.riskLookback ?? 20,
@@ -1264,9 +1262,7 @@ function decideAgentOrders(
     side = inventoryGap > 0 ? "buy" : "sell";
     const quantity = Math.min(agent.orderSize, Math.abs(inventoryGap));
     rationale =
-      agent.kind === "risk-parity"
-        ? "Compatibility alias: sizes single-asset inventory to a cash risk budget; true risk parity needs multiple assets."
-        : "Sizes settled inventory so estimated one-step marked-to-market volatility stays within its cash risk budget.";
+      "Sizes settled inventory so estimated one-step marked-to-market volatility stays within its cash risk budget.";
     return {
       rationale,
       events: [

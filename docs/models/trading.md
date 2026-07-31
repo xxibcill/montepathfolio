@@ -97,8 +97,9 @@ market simulator.
   inventory and the latest trade before the next decision. The result includes
   per-decision observed inventory and risk diagnostics, a per-round wealth
   history, the final book/accounts, gross and fee-inclusive marked wealth, and
-  `scenarioNotForecast: true`. The old `risk-parity` name is accepted only as a
-  deprecated compatibility alias for `risk-budget`.
+  `scenarioNotForecast: true`. The single-asset venue exposes a risk-budget
+  rule, not risk parity; genuine risk parity remains deferred until the venue
+  supports multiple simultaneously traded assets.
 - **Validation gate.** Agent IDs are unique, values, risk budgets, lookbacks,
   inventory caps, fees, and step bounds validate; fixed seeds replay
   decisions/book exactly; risk decisions use settled fills rather than submitted

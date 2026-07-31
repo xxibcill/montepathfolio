@@ -114,13 +114,18 @@ export function LessonChart({
             yScale={yScale}
             zeroY={yScale(0)}
             plotBottom={HEIGHT - MARGIN.bottom}
+            patternIndex={index}
           />
         ))}
       </svg>
       <figcaption>
-        {series.map((item) => (
+        {series.map((item, index) => (
           <span key={item.name}>
-            <i style={{ background: TONES[item.tone ?? "forest"] }} aria-hidden="true" />
+            <LegendMark
+              color={TONES[item.tone ?? "forest"]}
+              patternIndex={index}
+              style={item.style}
+            />
             {item.name}
           </span>
         ))}
@@ -180,6 +185,7 @@ function SeriesMark({
   yScale,
   zeroY,
   plotBottom,
+  patternIndex,
 }: {
   readonly series: LessonSeries;
   readonly color: string;
@@ -187,12 +193,18 @@ function SeriesMark({
   readonly yScale: (value: number) => number;
   readonly zeroY: number;
   readonly plotBottom: number;
+  readonly patternIndex: number;
 }) {
   if (series.style === "points") {
     return (
-      <g fill={color} opacity="0.62" aria-hidden="true">
+      <g fill={color} stroke="var(--paper-light)" strokeWidth="0.8" opacity="0.78" aria-hidden="true">
         {series.points.map((point, index) => (
-          <circle key={index} cx={xScale(point.x)} cy={yScale(point.y)} r="2.5" />
+          <PointMark
+            key={index}
+            x={xScale(point.x)}
+            y={yScale(point.y)}
+            patternIndex={patternIndex}
+          />
         ))}
       </g>
     );
@@ -211,6 +223,9 @@ function SeriesMark({
               y={Math.min(valueY, baseline)}
               width={width}
               height={Math.max(1, Math.abs(baseline - valueY))}
+              stroke={color}
+              strokeWidth={1 + (patternIndex % 2)}
+              strokeDasharray={lineDash(patternIndex)}
             />
           );
         })}
@@ -234,10 +249,66 @@ function SeriesMark({
       strokeWidth="2.2"
       strokeLinecap="round"
       strokeLinejoin="round"
+      strokeDasharray={lineDash(patternIndex)}
       vectorEffect="non-scaling-stroke"
       aria-hidden="true"
     />
   );
+}
+
+function PointMark({
+  x,
+  y,
+  patternIndex,
+}: {
+  readonly x: number;
+  readonly y: number;
+  readonly patternIndex: number;
+}) {
+  const shape = patternIndex % 4;
+  if (shape === 1) {
+    return <rect x={x - 2.5} y={y - 2.5} width="5" height="5" />;
+  }
+  if (shape === 2) {
+    return <rect x={x - 2.4} y={y - 2.4} width="4.8" height="4.8" transform={`rotate(45 ${x} ${y})`} />;
+  }
+  if (shape === 3) {
+    return <path d={`M ${x} ${y - 3} L ${x + 3} ${y + 2.5} L ${x - 3} ${y + 2.5} Z`} />;
+  }
+  return <circle cx={x} cy={y} r="2.5" />;
+}
+
+function LegendMark({
+  color,
+  patternIndex,
+  style,
+}: {
+  readonly color: string;
+  readonly patternIndex: number;
+  readonly style: LessonSeries["style"];
+}) {
+  return (
+    <svg className="lesson-chart__legend-mark" viewBox="0 0 24 12" aria-hidden="true">
+      <line
+        x1="1"
+        x2="23"
+        y1="6"
+        y2="6"
+        stroke={color}
+        strokeWidth={style === "bars" ? 5 : 2.2}
+        strokeDasharray={lineDash(patternIndex)}
+      />
+      {style === "points" ? (
+        <g fill={color}>
+          <PointMark x={12} y={6} patternIndex={patternIndex} />
+        </g>
+      ) : null}
+    </svg>
+  );
+}
+
+function lineDash(patternIndex: number): string | undefined {
+  return [undefined, "8 5", "2 4", "10 3 2 3"][patternIndex % 4];
 }
 
 function extent(values: readonly number[]): readonly [number, number] {

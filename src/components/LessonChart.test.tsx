@@ -61,4 +61,26 @@ describe("LessonChart accessible fallback", () => {
     expect(headings).toContain("Observation (index)");
     expect(headings).toContain("Squared value (units²)");
   });
+
+  it("uses non-color line patterns in both plot and legend", () => {
+    act(() => {
+      root!.render(
+        <LessonChart
+          title="Pattern fixture"
+          series={[
+            { name: "Baseline", points: [{ x: 0, y: 0 }, { x: 1, y: 1 }] },
+            { name: "Comparison", points: [{ x: 0, y: 1 }, { x: 1, y: 0 }] },
+          ]}
+        />,
+      );
+    });
+
+    const plotPaths = container!.querySelectorAll("svg[role=img] > path");
+    expect(plotPaths[0].getAttribute("stroke-dasharray")).toBeNull();
+    expect(plotPaths[1].getAttribute("stroke-dasharray")).toBe("8 5");
+    const legendLines = container!.querySelectorAll(
+      ".lesson-chart__legend-mark line",
+    );
+    expect(legendLines[1].getAttribute("stroke-dasharray")).toBe("8 5");
+  });
 });

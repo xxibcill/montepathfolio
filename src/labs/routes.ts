@@ -1,13 +1,7 @@
-export const LAB_IDS = [
-  "portfolio-projection",
-  "portfolio-construction",
-  "risk",
-  "derivatives",
-  "rates-credit",
-  "trading",
-] as const;
+import { DEFAULT_LESSONS, LAB_IDS, type LabId } from "./lab-registry";
 
-export type LabId = (typeof LAB_IDS)[number];
+export { LAB_IDS } from "./lab-registry";
+export type { LabId } from "./lab-registry";
 
 export type LabRoute =
   | { readonly kind: "home" }
@@ -16,15 +10,6 @@ export type LabRoute =
       readonly lab: LabId;
       readonly lesson: string;
     };
-
-const DEFAULT_LESSONS: Readonly<Record<LabId, string>> = {
-  "portfolio-projection": "accumulation",
-  "portfolio-construction": "mean-variance",
-  risk: "var-cvar",
-  derivatives: "black-scholes",
-  "rates-credit": "vasicek",
-  trading: "ornstein-uhlenbeck",
-};
 
 export function parseLabRoute(hash: string): LabRoute {
   const segments = hash.replace(/^#\/?/, "").split("/").filter(Boolean);

@@ -1,5 +1,9 @@
 import {
   QuantError,
+  asDrawdownSeries,
+  asIndexSeries,
+  asLossValueSeries,
+  asWealthSeries,
   createSemanticRandom,
   factorCorrelationMatrix,
   matrixVectorMultiply,
@@ -666,12 +670,21 @@ function buildMetrics(
 function buildDistribution(
   paths: readonly AnalyzedPath[],
 ): PortfolioLabV2Distribution {
+  const wealthPercentiles = buildPercentiles(paths.map((path) => path.wealth));
+  const drawdownPercentiles = buildPercentiles(paths.map((path) => path.drawdown));
   return {
-    terminalWealth: paths.map((path) => path.wealth.at(-1)!),
-    terminalEconomicLosses: paths.map((path) => path.terminalEconomicLoss),
-    maximumDrawdowns: paths.map((path) => path.maximumDrawdown),
-    wealthPercentiles: buildPercentiles(paths.map((path) => path.wealth)),
-    drawdownPercentiles: buildPercentiles(paths.map((path) => path.drawdown)),
+    terminalWealth: asWealthSeries(paths.map((path) => path.wealth.at(-1)!)),
+    terminalEconomicLosses: asLossValueSeries(
+      paths.map((path) => path.terminalEconomicLoss),
+    ),
+    maximumDrawdowns: asDrawdownSeries(
+      paths.map((path) => path.maximumDrawdown),
+    ),
+    wealthPercentiles: mapPercentileSeries(wealthPercentiles, asWealthSeries),
+    drawdownPercentiles: mapPercentileSeries(
+      drawdownPercentiles,
+      asDrawdownSeries,
+    ),
   };
 }
 
@@ -686,13 +699,13 @@ function buildSampledPath(
   }
   return {
     pathIndex: path.pathIndex,
-    wealth: path.wealth,
+    wealth: asWealthSeries(path.wealth),
     holdings: plan.allocation.map((allocation, assetIndex) => ({
       assetId: allocation.assetId,
-      values: path.sampledHoldings![assetIndex],
+      values: asWealthSeries(path.sampledHoldings![assetIndex]),
     })),
-    cashFlowNeutralIndex: path.cashFlowNeutralIndex,
-    drawdown: path.drawdown,
+    cashFlowNeutralIndex: asIndexSeries(path.cashFlowNeutralIndex),
+    drawdown: asDrawdownSeries(path.drawdown),
     totalWithdrawn: path.totalWithdrawn,
   };
 }
@@ -997,13 +1010,23 @@ function buildPercentiles(
   return result;
 }
 
+function mapPercentileSeries<Series extends readonly number[]>(
+  percentiles: PortfolioLabV2Percentiles,
+  tag: (values: readonly number[]) => Series,
+): PortfolioLabV2Percentiles<Series> {
+  return {
+    p05: tag(percentiles.p05),
+    p10: tag(percentiles.p10),
+    p50: tag(percentiles.p50),
+    p90: tag(percentiles.p90),
+    p95: tag(percentiles.p95),
+  };
+}
+
 function selectSampleIndexes(pathCount: number, sampleCount: number): number[] {
-  if (sampleCount >= pathCount) {
-    return Array.from({ length: pathCount }, (_, index) => index);
-  }
-  if (sampleCount === 1) return [0];
-  return Array.from({ length: sampleCount }, (_, index) =>
-    Math.round((index * (pathCount - 1)) / (sampleCount - 1)),
+  return Array.from(
+    { length: Math.min(pathCount, sampleCount) },
+    (_, index) => index,
   );
 }
 

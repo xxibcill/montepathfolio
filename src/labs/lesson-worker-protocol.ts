@@ -1,4 +1,7 @@
-import type { LessonOutput } from "./lesson-types";
+import type {
+  LessonCalibrationSnapshot,
+  LessonOutput,
+} from "./lesson-types";
 
 export const LESSON_WORKER_PROTOCOL = "educational-lesson-worker@1" as const;
 export const LESSON_DATA_ATTACHMENT_CONTRACT =
@@ -17,6 +20,7 @@ export interface LessonWorkerRequest {
   readonly lessonId: string;
   readonly values: Readonly<Record<string, number>>;
   readonly attachment?: LessonDataAttachment;
+  readonly calibrationSnapshot?: LessonCalibrationSnapshot;
 }
 
 export interface LessonWorkerProblem {
@@ -75,6 +79,112 @@ export function isLessonDataAttachment(
     candidate.text.length > 0 &&
     candidate.text.length <= 2_000_000
   );
+}
+
+export function isLessonCalibrationSnapshot(
+  value: unknown,
+): value is LessonCalibrationSnapshot {
+  if (!isRecord(value)) return false;
+  const candidate = value;
+  const provenance = candidate.dataProvenance;
+  const convergence = candidate.convergence;
+  if (
+    candidate.contract === "calibration-snapshot@1" &&
+    candidate.schemaVersion === 1 &&
+    ["daily", "weekly", "monthly", "annual"].includes(
+      String(candidate.observationFrequency),
+    ) &&
+    ["simple", "log"].includes(String(candidate.returnConvention)) &&
+    typeof candidate.sampleStart === "string" &&
+    Number.isFinite(Date.parse(candidate.sampleStart)) &&
+    typeof candidate.sampleEnd === "string" &&
+    Number.isFinite(Date.parse(candidate.sampleEnd)) &&
+    Date.parse(candidate.sampleStart) <= Date.parse(candidate.sampleEnd) &&
+    typeof candidate.fittingMethod === "string" &&
+    candidate.fittingMethod.trim().length > 0 &&
+    isRecord(convergence) &&
+    typeof convergence.converged === "boolean" &&
+    Number.isSafeInteger(convergence.iterations) &&
+    Number(convergence.iterations) >= 0 &&
+    (convergence.objective === undefined || isFiniteNumber(convergence.objective)) &&
+    isStringArray(candidate.warnings) &&
+    isRecord(provenance) &&
+    typeof provenance.label === "string" &&
+    provenance.label.trim().length > 0 &&
+    ["illustrative", "user-imported", "historical"].includes(
+      String(provenance.kind),
+    )
+  ) {
+    return snapshotEstimatesMatchModel(
+      candidate.modelContract,
+      candidate.estimates,
+    );
+  }
+  return false;
+}
+
+function snapshotEstimatesMatchModel(
+  modelContract: unknown,
+  estimates: unknown,
+): boolean {
+  if (!isRecord(estimates)) return false;
+  if (modelContract === "market-model/garch-1-1@1") {
+    return (
+      isFiniteNumber(estimates.omega) &&
+      isFiniteNumber(estimates.alpha) &&
+      isFiniteNumber(estimates.beta) &&
+      isFiniteNumber(estimates.meanReturn) &&
+      estimates.omega >= 0 &&
+      estimates.alpha >= 0 &&
+      estimates.beta >= 0
+    );
+  }
+  if (modelContract === "market-model/ordered-regimes@1") {
+    return (
+      isStringArray(estimates.regimeLabels, 3) &&
+      isFiniteNumberArray(estimates.means, 3) &&
+      isFiniteNumberArray(estimates.volatilities, 3) &&
+      estimates.volatilities.every((item) => item >= 0) &&
+      isFiniteMatrix(estimates.transitionMatrix, 3) &&
+      Array.isArray(estimates.statePath) &&
+      estimates.statePath.every(
+        (state) => Number.isSafeInteger(state) && Number(state) >= 0 && Number(state) <= 2,
+      )
+    );
+  }
+  return false;
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function isFiniteNumberArray(value: unknown, length: number): value is number[] {
+  return (
+    Array.isArray(value) &&
+    value.length === length &&
+    value.every(isFiniteNumber)
+  );
+}
+
+function isFiniteMatrix(value: unknown, size: number): value is number[][] {
+  return (
+    Array.isArray(value) &&
+    value.length === size &&
+    value.every((row) => isFiniteNumberArray(row, size))
+  );
+}
+
+function isStringArray(value: unknown, length?: number): value is string[] {
+  return (
+    Array.isArray(value) &&
+    (length === undefined || value.length === length) &&
+    value.every((item) => typeof item === "string")
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
 function isLessonWorkerProblem(value: unknown): value is LessonWorkerProblem {

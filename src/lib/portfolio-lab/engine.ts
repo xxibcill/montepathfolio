@@ -74,14 +74,9 @@ export async function executeValidatedPortfolioLabRequestCooperatively(
 }
 
 export function selectPortfolioLabSampleIndexes(pathCount: number): number[] {
-  if (pathCount <= MAX_SAMPLE_PATHS) {
-    return Array.from({ length: pathCount }, (_, index) => index);
-  }
-
-  return Array.from({ length: MAX_SAMPLE_PATHS }, (_, sampleIndex) =>
-    Math.round(
-      (sampleIndex * (pathCount - 1)) / (MAX_SAMPLE_PATHS - 1),
-    ),
+  return Array.from(
+    { length: Math.min(pathCount, MAX_SAMPLE_PATHS) },
+    (_, index) => index,
   );
 }
 

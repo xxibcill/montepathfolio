@@ -20,7 +20,7 @@
   --vermilion: oklch(58% 0.18 35);
   --vermilion-dark: oklch(42% 0.13 35);
   --vermilion-pale: oklch(90% 0.055 40);
-  --ochre: oklch(67% 0.12 76);
+  --ochre: oklch(62% 0.12 76);
   --ochre-pale: oklch(91% 0.055 82);
   --focus: oklch(52% 0.13 247);
 
@@ -2705,7 +2705,7 @@ footer {
 
 .cause-effect-note {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 1fr;
   gap: var(--space-2) var(--space-8);
   margin-top: var(--space-8);
   padding-block: var(--space-4);
@@ -2723,12 +2723,41 @@ footer {
   font-size: var(--text-sm);
 }
 
-.cause-effect-note > div {
+.cause-effect-note__metrics {
   display: grid;
-  justify-items: end;
-  color: var(--ink-faint);
-  font-size: 0.7rem;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: var(--space-3);
+  margin: var(--space-2) 0 0;
+}
+
+.cause-effect-note__metrics > div {
+  padding: var(--space-3);
+  background: var(--paper-deep);
+}
+
+.cause-effect-note__metrics dt {
+  color: var(--ink-soft);
+  font-size: var(--text-xs);
+  font-weight: 650;
+}
+
+.cause-effect-note__metrics dd {
+  display: grid;
+  gap: var(--space-1);
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-sm);
   font-variant-numeric: tabular-nums;
+}
+
+.cause-effect-note__previous {
+  margin-top: var(--space-2);
+}
+
+.cause-effect-note__previous > summary {
+  cursor: pointer;
+  color: var(--forest-dark);
+  font-size: var(--text-sm);
+  font-weight: 650;
 }
 
 .lesson-metrics {
@@ -2834,9 +2863,10 @@ footer {
   gap: 0.4rem;
 }
 
-.lesson-chart figcaption i {
-  width: 0.65rem;
-  height: 2px;
+.lesson-chart__legend-mark {
+  width: 1.5rem;
+  height: 0.75rem;
+  overflow: visible;
 }
 
 .lesson-chart__empty {
@@ -3339,10 +3369,6 @@ footer {
   .cause-effect-note,
   .assumptions-limits {
     grid-template-columns: 1fr;
-  }
-
-  .cause-effect-note > div {
-    justify-items: start;
   }
 
   .lesson-metrics {

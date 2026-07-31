@@ -5,18 +5,25 @@ import {
   type LessonDataAttachment,
   type LessonWorkerRequest,
 } from "../labs/lesson-worker-protocol";
-import type { LessonOutput } from "../labs/lesson-types";
+import type {
+  LessonCalibrationSnapshot,
+  LessonOutput,
+} from "../labs/lesson-types";
 
 export type LessonRunStatus = "current" | "changed" | "running" | "error";
 
 export interface PreviousLessonRun {
   readonly values: Readonly<Record<string, number>>;
   readonly output: LessonOutput;
+  readonly attachment?: LessonDataAttachment;
+  readonly calibrationSnapshot?: LessonCalibrationSnapshot;
 }
 
 interface LessonWorkerState {
   readonly output: LessonOutput;
   readonly runValues: Readonly<Record<string, number>>;
+  readonly runAttachment?: LessonDataAttachment;
+  readonly runCalibrationSnapshot?: LessonCalibrationSnapshot;
   readonly previous: PreviousLessonRun | null;
   readonly status: Exclude<LessonRunStatus, "changed">;
   readonly error: string | null;
@@ -26,11 +33,14 @@ interface PendingRun {
   readonly requestId: number;
   readonly values: Readonly<Record<string, number>>;
   readonly compareWithCurrent: boolean;
+  readonly attachment?: LessonDataAttachment;
+  readonly calibrationSnapshot?: LessonCalibrationSnapshot;
 }
 
 export function useLessonWorker(
   lessonId: string,
   initialValues: Readonly<Record<string, number>>,
+  initialCalibrationSnapshot?: LessonCalibrationSnapshot,
 ) {
   const initialValuesRef = useRef({ ...initialValues });
   const workerRef = useRef<Worker | null>(null);
@@ -39,6 +49,7 @@ export function useLessonWorker(
   const [state, setState] = useState<LessonWorkerState>(() => ({
     output: loadingOutput(),
     runValues: { ...initialValues },
+    runCalibrationSnapshot: initialCalibrationSnapshot,
     previous: null,
     status: "running",
     error: null,
@@ -75,9 +86,16 @@ export function useLessonWorker(
       setState((current) => ({
         output: response.output,
         runValues: pending.values,
+        runAttachment: pending.attachment,
+        runCalibrationSnapshot: pending.calibrationSnapshot,
         previous:
           pending.compareWithCurrent && current.status !== "error"
-            ? { values: current.runValues, output: current.output }
+            ? {
+                values: current.runValues,
+                output: current.output,
+                attachment: current.runAttachment,
+                calibrationSnapshot: current.runCalibrationSnapshot,
+              }
             : current.previous,
         status: "current",
         error: null,
@@ -118,11 +136,15 @@ export function useLessonWorker(
       requestId: nextRequestIdRef.current,
       lessonId,
       values: initialValuesRef.current,
+      ...(initialCalibrationSnapshot
+        ? { calibrationSnapshot: initialCalibrationSnapshot }
+        : {}),
     };
     pendingRef.current = {
       requestId: request.requestId,
       values: initialValuesRef.current,
       compareWithCurrent: false,
+      calibrationSnapshot: initialCalibrationSnapshot,
     };
     try {
       worker.postMessage(request);
@@ -144,12 +166,13 @@ export function useLessonWorker(
       workerRef.current = null;
       pendingRef.current = null;
     };
-  }, [attachWorker, lessonId]);
+  }, [attachWorker, initialCalibrationSnapshot, lessonId]);
 
   const run = useCallback(
     (
       values: Readonly<Record<string, number>>,
       attachment?: LessonDataAttachment,
+      calibrationSnapshot?: LessonCalibrationSnapshot,
     ) => {
       let worker = workerRef.current;
       if (!worker) {
@@ -174,11 +197,14 @@ export function useLessonWorker(
         lessonId,
         values: { ...values },
         ...(attachment ? { attachment } : {}),
+        ...(calibrationSnapshot ? { calibrationSnapshot } : {}),
       };
       pendingRef.current = {
         requestId,
         values: request.values,
         compareWithCurrent: true,
+        attachment,
+        calibrationSnapshot,
       };
       setState((current) => ({ ...current, status: "running", error: null }));
       try {

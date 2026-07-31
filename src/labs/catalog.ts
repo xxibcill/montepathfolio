@@ -4,7 +4,7 @@ import type {
   LessonParameter,
   LessonPreset,
 } from "./lesson-types";
-import type { LabId } from "./routes";
+import { LAB_REGISTRY, type LabId } from "./lab-registry";
 
 const percent = (
   id: string,
@@ -14,11 +14,12 @@ const percent = (
   minimum = 0,
   maximum = 1,
   step = 0.01,
+  unit = "annual decimal",
 ): LessonParameter => ({
   id,
   label,
   description,
-  unit: "annual decimal",
+  unit,
   minimum,
   maximum,
   step,
@@ -134,7 +135,7 @@ const projectionLessons: readonly LessonDefinition[] = [
       percent("drift", "Drift", "Continuously compounded annual drift before random shocks.", 0.07, -0.3, 0.4),
       percent("volatility", "Diffusion volatility", "Annual scale of ordinary Gaussian movement.", 0.18, 0, 0.8),
       number("jumpIntensity", "Jump intensity", "Expected arrivals per year.", 0.6, 0, 8, 0.1, "arrivals / year"),
-      percent("meanJump", "Mean log jump", "Average log multiplier when an event occurs.", -0.12, -0.8, 0.5),
+      percent("meanJump", "Mean log jump", "Average log multiplier when an event occurs.", -0.12, -0.8, 0.5, 0.01, "log return per jump"),
     ],
     presets: [
       illustrativePreset({ drift: 0.07, volatility: 0.18, jumpIntensity: 0.6, meanJump: -0.12 }),
@@ -236,14 +237,14 @@ const projectionLessons: readonly LessonDefinition[] = [
       number("annualContribution", "Annual contribution", "Amount added during the accumulation phase.", 12000, 0, 200000, 1000, "currency / year", "currency"),
       number("accumulationYears", "Years before retirement", "Accumulation years before withdrawals begin.", 10, 0, 40, 1, "years", "integer"),
       number("annualWithdrawal", "Real annual withdrawal", "Time-zero purchasing-power target.", 24000, 0, 200000, 1000, "currency / year", "currency"),
-      percent("withdrawalRate", "Percentage withdrawal", "Annual wealth fraction used by the percentage policy.", 0.04, 0, 0.2, 0.005),
+      percent("withdrawalRate", "Percentage withdrawal", "Annual wealth fraction used by the percentage policy.", 0.04, 0, 0.2, 0.005, "annual wealth fraction"),
       choice("withdrawalPolicy", "Spending policy", "Select how each retirement-period withdrawal is calculated.", 0, [
         { value: 0, label: "Fixed real spending" },
         { value: 1, label: "Percentage of wealth" },
         { value: 2, label: "Guardrail spending" },
       ]),
       percent("inflation", "Inflation", "Annual effective inflation rate.", 0.025, -0.02, 0.15, 0.005),
-      percent("stockAllocation", "Stock allocation", "Target capital weight for the higher-volatility asset.", 0.6, 0, 1, 0.05),
+      percent("stockAllocation", "Stock allocation", "Target capital weight for the higher-volatility asset.", 0.6, 0, 1, 0.05, "portfolio fraction"),
       number("rebalanceMonths", "Rebalance interval", "Months between target-weight resets; zero means never.", 12, 0, 60, 1, "months", "integer"),
       number("years", "Retirement horizon", "Years of withdrawals.", 30, 5, 50, 1, "years", "integer"),
     ],
@@ -390,7 +391,7 @@ const riskLessons: readonly LessonDefinition[] = [
     parameters: [
       number("confidence", "Confidence", "Loss quantile to inspect.", 0.95, 0.8, 0.995, 0.005, "probability"),
       number("portfolioValue", "Portfolio value", "Notional value used to convert returns into losses.", 100000, 1000, 10000000, 1000, "currency", "currency"),
-      percent("volatility", "Daily volatility", "Per-period standard deviation for the parametric and Monte Carlo methods.", 0.012, 0, 0.1, 0.001),
+      percent("volatility", "Daily volatility", "Per-period standard deviation for the parametric and Monte Carlo methods.", 0.012, 0, 0.1, 0.001, "per-day decimal"),
       number("holdingPeriods", "Holding period", "Square-root-of-time periods in the normal illustration.", 1, 1, 20, 1, "periods", "integer"),
     ],
     presets: [illustrativePreset({ confidence: 0.95, portfolioValue: 100000, volatility: 0.012, holdingPeriods: 1 })],
@@ -445,7 +446,7 @@ const constructionLessons: readonly LessonDefinition[] = [
     intuition: "Weights move along a simplex. The covariance matrix bends the risk surface; expected returns tilt the preferred point.",
     equation: "min wᵀΣw;  Σwᵢ=1, wᵢ≥0;  Sharpe=(wᵀμ−r_f)/√(wᵀΣw)",
     symbols: [{ symbol: "w", meaning: "capital weights" }, { symbol: "Σ", meaning: "annual covariance" }, { symbol: "μ", meaning: "annual expected returns" }],
-    parameters: [percent("returnA", "Asset A return", "Annual expected arithmetic return.", 0.08, -0.1, 0.3), percent("returnB", "Asset B return", "Annual expected arithmetic return.", 0.04, -0.1, 0.3), percent("correlation", "Correlation", "Dependence between assets.", 0.2, -0.9, 0.9, 0.05), percent("riskFree", "Risk-free rate", "Annual rate used in the Sharpe ratio.", 0.02, -0.05, 0.15)],
+    parameters: [percent("returnA", "Asset A return", "Annual expected arithmetic return.", 0.08, -0.1, 0.3), percent("returnB", "Asset B return", "Annual expected arithmetic return.", 0.04, -0.1, 0.3), percent("correlation", "Correlation", "Dependence between assets.", 0.2, -0.9, 0.9, 0.05, "correlation"), percent("riskFree", "Risk-free rate", "Annual rate used in the Sharpe ratio.", 0.02, -0.05, 0.15)],
     presets: [illustrativePreset({ returnA: 0.08, returnB: 0.04, correlation: 0.2, riskFree: 0.02 })],
     workedExample: "With two uncorrelated equal-volatility assets, the minimum-variance solution is 50% / 50%.",
     check: "Weights are nonnegative and sum to one; reported return and variance recompute from the returned weights.",
@@ -463,7 +464,7 @@ const constructionLessons: readonly LessonDefinition[] = [
     intuition: "Regression slope is beta; the intercept after accounting for the risk-free rate is alpha. The Security Market Line turns beta into a model-implied expected return.",
     equation: "Rᵢ−r_f = αᵢ + βᵢ(R_m−r_f)+εᵢ",
     symbols: [{ symbol: "β", meaning: "market sensitivity" }, { symbol: "α", meaning: "average excess return not explained by beta" }],
-    parameters: [number("beta", "True illustrative beta", "Multiplier used to construct the sample asset returns.", 1.2, -0.5, 2.5, 0.1, "slope"), percent("riskFree", "Risk-free rate", "Per-observation simple rate in the lesson.", 0.001, -0.02, 0.03, 0.001), percent("marketPremium", "Market premium", "Expected market return above the risk-free rate.", 0.006, -0.02, 0.03, 0.001)],
+    parameters: [number("beta", "True illustrative beta", "Multiplier used to construct the sample asset returns.", 1.2, -0.5, 2.5, 0.1, "slope"), percent("riskFree", "Risk-free rate", "Per-observation simple rate in the lesson.", 0.001, -0.02, 0.03, 0.001, "simple decimal per observation"), percent("marketPremium", "Market premium", "Expected market return above the risk-free rate.", 0.006, -0.02, 0.03, 0.001, "simple decimal per observation")],
     presets: [illustrativePreset({ beta: 1.2, riskFree: 0.001, marketPremium: 0.006 })],
     workedExample: "If β = 1.2 and the expected market premium is 6%, CAPM adds 7.2% to the risk-free rate.",
     check: "A regression fixture built as asset = α + β×market must recover its α and β.",
@@ -481,7 +482,7 @@ const constructionLessons: readonly LessonDefinition[] = [
     intuition: "Multiple regression estimates a loading for each supplied factor. Nothing in the engine assumes a factor must be market, value, rates, or anything else.",
     equation: "r = α + Bf + ε",
     symbols: [{ symbol: "B", meaning: "estimated factor exposures" }, { symbol: "f", meaning: "aligned factor returns" }, { symbol: "ε", meaning: "residual return" }],
-    parameters: [number("marketLoading", "Factor A loading", "Synthetic exposure to the first data-defined factor.", 1.1, -2, 3, 0.1, "loading"), number("styleLoading", "Factor B loading", "Synthetic exposure to the second factor.", 0.4, -2, 3, 0.1, "loading"), percent("scenarioShock", "Factor B shock", "Simple scenario change applied after fitting.", -0.02, -0.15, 0.15, 0.005), number("rollingWindow", "Rolling window", "Prior monthly observations used to estimate each out-of-sample exposure.", 24, 12, 48, 1, "months", "integer")],
+    parameters: [number("marketLoading", "Factor A loading", "Synthetic exposure to the first data-defined factor.", 1.1, -2, 3, 0.1, "loading"), number("styleLoading", "Factor B loading", "Synthetic exposure to the second factor.", 0.4, -2, 3, 0.1, "loading"), percent("scenarioShock", "Factor B shock", "Simple scenario change applied after fitting.", -0.02, -0.15, 0.15, 0.005, "simple decimal per observation"), number("rollingWindow", "Rolling window", "Prior monthly observations used to estimate each out-of-sample exposure.", 24, 12, 48, 1, "months", "integer")],
     presets: [illustrativePreset({ marketLoading: 1.1, styleLoading: 0.4, scenarioShock: -0.02, rollingWindow: 24 })],
     workedExample: "A 0.4 loading times a −2% factor shock contributes −0.8% before alpha, other factors, and residuals.",
     check: "Synthetic linear data should recover known loadings; rolling estimates must never include future rows.",
@@ -544,7 +545,7 @@ const constructionLessons: readonly LessonDefinition[] = [
     intuition: "The model starts with equilibrium returns, then blends absolute or relative views according to their uncertainty before reusing the mean–variance allocator.",
     equation: "μ_BL = [(τΣ)⁻¹ + PᵀΩ⁻¹P]⁻¹[(τΣ)⁻¹π + PᵀΩ⁻¹q]",
     symbols: [{ symbol: "π", meaning: "market-implied equilibrium returns" }, { symbol: "P,q", meaning: "view portfolios and view returns" }, { symbol: "Ω", meaning: "view uncertainty" }],
-    parameters: [number("confidence", "View confidence", "How strongly the posterior follows the view.", 0.65, 0.05, 0.95, 0.05, "confidence"), percent("viewReturn", "Relative view", "Expected return of asset A minus asset B.", 0.03, -0.15, 0.15, 0.005), number("tau", "Prior uncertainty τ", "Scale on equilibrium-return uncertainty.", 0.05, 0.005, 0.5, 0.005, "scale")],
+    parameters: [number("confidence", "View confidence", "How strongly the posterior follows the view.", 0.65, 0.05, 0.95, 0.05, "confidence"), percent("viewReturn", "Relative view", "Expected return of asset A minus asset B.", 0.03, -0.15, 0.15, 0.005, "return decimal per period"), number("tau", "Prior uncertainty τ", "Scale on equilibrium-return uncertainty.", 0.05, 0.005, 0.5, 0.005, "scale")],
     presets: [illustrativePreset({ confidence: 0.65, viewReturn: 0.03, tau: 0.05 })],
     workedExample: "At near-zero confidence, the posterior stays near π. Higher confidence moves Pμ toward q without silently changing the covariance input.",
     check: "Posterior sensitivity is monotone with confidence in a small matrix fixture, and final weights come from the shared allocator.",
@@ -824,56 +825,22 @@ export const LESSONS: readonly LessonDefinition[] = [
   ...tradingLessons,
 ];
 
-export const LABS: readonly LabDefinition[] = [
-  {
-    id: "portfolio-projection",
-    number: "I",
-    title: "Portfolio projection",
-    subtitle: "Market paths and life-cycle cash flows",
-    introduction: "Separate market dynamics from portfolio accounting, then ask how regimes, variance, tails, dependence, and withdrawals change the range of paths.",
-    lessonIds: ["accumulation", ...projectionLessons.map((lesson) => lesson.id)],
-  },
-  {
-    id: "portfolio-construction",
-    number: "II",
-    title: "Portfolio construction",
-    subtitle: "From beliefs and covariance to allocation",
-    introduction: "Study allocations as constrained mathematical objects. Compare capital weights with the risk and assumptions that produced them.",
-    lessonIds: constructionLessons.map((lesson) => lesson.id),
-  },
-  {
-    id: "risk",
-    number: "III",
-    title: "Risk",
-    subtitle: "Loss tails, attribution, and honest backtests",
-    introduction: "Define loss first, keep estimation windows separate from tests, and distinguish a threshold from the severity beyond it.",
-    lessonIds: riskLessons.map((lesson) => lesson.id),
-  },
-  {
-    id: "derivatives",
-    number: "IV",
-    title: "Derivatives",
-    subtitle: "Analytical, tree, and pathwise valuation",
-    introduction: "Price the same European contract three ways before moving into path dependence, stochastic volatility, and composed strategies.",
-    lessonIds: derivativesLessons.map((lesson) => lesson.id),
-  },
-  {
-    id: "rates-credit",
-    number: "V",
-    title: "Rates & credit",
-    subtitle: "Discounting, curves, and default mechanisms",
-    introduction: "Keep short rates, yields, spreads, survival, and structural default distinct—even when every value is represented by a number.",
-    lessonIds: ratesCreditLessons.map((lesson) => lesson.id),
-  },
-  {
-    id: "trading",
-    number: "VI",
-    title: "Trading mechanics",
-    subtitle: "Spreads, books, agents, and execution cost",
-    introduction: "Move from a mean-reverting signal into deterministic order matching, then examine how agent rules and impact assumptions shape outcomes.",
-    lessonIds: tradingLessons.map((lesson) => lesson.id),
-  },
-];
+const LESSON_IDS_BY_LAB: Readonly<Record<LabId, readonly string[]>> = {
+  "portfolio-projection": [
+    "accumulation",
+    ...projectionLessons.map((lesson) => lesson.id),
+  ],
+  "portfolio-construction": constructionLessons.map((lesson) => lesson.id),
+  risk: riskLessons.map((lesson) => lesson.id),
+  derivatives: derivativesLessons.map((lesson) => lesson.id),
+  "rates-credit": ratesCreditLessons.map((lesson) => lesson.id),
+  trading: tradingLessons.map((lesson) => lesson.id),
+};
+
+export const LABS: readonly LabDefinition[] = LAB_REGISTRY.map((lab) => ({
+  ...lab,
+  lessonIds: LESSON_IDS_BY_LAB[lab.id],
+}));
 
 export function getLab(id: LabId): LabDefinition {
   return LABS.find((lab) => lab.id === id)!;

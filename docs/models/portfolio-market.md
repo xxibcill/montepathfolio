@@ -26,8 +26,8 @@ Implementation: [`portfolio-lab request@1`](../../src/lib/portfolio-lab/contract
 - **Implementation.** Two semantic Gaussian streams generate stocks and the
   independent part of bonds. Portfolio holdings and a separate unit NAV are
   advanced together; only the NAV is used for contribution-neutral drawdown.
-  The primary case retains at most 160 evenly spaced sample paths while all paths
-  feed distributions and metrics.
+  The primary case retains at most 160 leading semantic path IDs while all paths
+  feed distributions and metrics. Leading IDs stay stable when path count grows.
 - **Validation gate.** Fixed seeds repeat exactly; increasing the horizon/path
   count preserves prefixes; case order and added comparisons do not change an
   existing case; contribution-only growth creates no drawdown; probabilities

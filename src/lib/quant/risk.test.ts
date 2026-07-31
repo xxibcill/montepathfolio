@@ -75,6 +75,26 @@ describe("VaR and Conditional Value at Risk", () => {
     };
     expect(calculateVarCvar(request)).toEqual(calculateVarCvar(request));
   });
+
+  it("returns zero VaR and CVaR when every sampled outcome is a gain", () => {
+    const result = calculateVarCvar({
+      contract: "risk-lab/var-cvar@1",
+      method: {
+        kind: "monte-carlo-normal",
+        meanReturn: 0.0002,
+        volatility: 0,
+        seed: 120,
+        samples: 100,
+      },
+      confidenceLevel: 0.95,
+      holdingPeriods: 1,
+      portfolioValue: 100_000,
+    }).result;
+
+    expect(result.valueAtRisk).toBe(0);
+    expect(result.conditionalValueAtRisk).toBe(0);
+    expect(result.tailObservationCount).toBe(0);
+  });
 });
 
 describe("risk attribution and backtesting", () => {
@@ -136,6 +156,19 @@ describe("risk attribution and backtesting", () => {
     expect(result.points.every((point) => point.estimationEndIndex < point.testIndex)).toBe(true);
     expect(result.points[0].testTimestamp).toBe("2025-05-01");
     expect(result.dataProvenance?.label).toBe("Backtest fixture");
+  });
+
+  it("rejects backtests above the declared observation limit", () => {
+    expect(() =>
+      backtestValueAtRisk({
+        contract: "risk-lab/var-backtest@1",
+        returns: Array(50_001).fill(0),
+        estimationWindow: 20,
+        confidenceLevel: 0.95,
+        portfolioValue: 100,
+        method: "historical",
+      }),
+    ).toThrow(/observation limit/i);
   });
 
   it("rejects unsupported risk contracts", () => {
@@ -226,6 +259,23 @@ describe("retirement and sequence of returns", () => {
     }).result.paths[0];
     expect(output.nominalSpending[0]).toBeCloseTo(121, 12);
     expect(output.realSpending[0]).toBeCloseTo(100, 12);
+  });
+
+  it("caps guardrail spending after converting the annual amount to a period", () => {
+    const output = runRetirementSequence({
+      ...zeroReturnInput,
+      withdrawalPolicy: {
+        kind: "guardrails",
+        initialAnnualAmount: 1_200,
+        lowerWithdrawalRate: 0.01,
+        upperWithdrawalRate: 0.5,
+        adjustmentRate: 0,
+      },
+    }).result.paths[0];
+
+    expect(output.nominalSpending[0]).toBe(100);
+    expect(output.failurePeriod).toBe(1);
+    expect(output.bequest).toBe(0);
   });
 
   it("teaches sequence risk with the exact same return multiset", () => {

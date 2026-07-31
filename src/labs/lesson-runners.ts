@@ -73,6 +73,7 @@ import {
   runHistoricalBootstrap,
   runMertonJumpDiffusion,
   runStudentTInnovations,
+  type GarchParameters,
   type ReturnDataset,
 } from "../lib/quant/market-models";
 import {
@@ -101,6 +102,7 @@ import {
 import type {
   LessonMetric,
   LessonChartAxes,
+  LessonCalibrationSnapshot,
   LessonOutput,
   LessonSeries,
 } from "./lesson-types";
@@ -109,11 +111,16 @@ import {
   parseImportedFactorDataset,
   parseImportedReturnDataset,
 } from "./imported-datasets";
+import {
+  validateLessonValues,
+  type LessonValues,
+} from "./lesson-values";
 
-type Values = Readonly<Record<string, number>>;
+type Values = LessonValues;
 type Runner = (
   values: Values,
   attachment?: LessonDataAttachment,
+  calibrationSnapshot?: LessonCalibrationSnapshot,
 ) => LessonOutput;
 
 const runners: Readonly<Record<string, Runner>> = {
@@ -184,12 +191,18 @@ const PRIMARY_CHART_AXES: Readonly<Record<string, LessonChartAxes>> = {
 
 export function runLesson(
   id: string,
-  values: Values,
+  values: Readonly<Record<string, number>>,
   attachment?: LessonDataAttachment,
+  calibrationSnapshot?: LessonCalibrationSnapshot,
 ): LessonOutput {
+  const validatedValues = validateLessonValues(id, values);
   const runner = runners[id];
-  if (!runner) throw new Error(`No educational runner is registered for ${id}.`);
-  const output = runner(values, attachment);
+  if (!runner) throw new Error(`Lesson ${id} has no calculation runner.`);
+  const output = runner(
+    validatedValues,
+    attachment,
+    calibrationSnapshot,
+  );
   const chartAxes = output.chartAxes ?? PRIMARY_CHART_AXES[id];
   if (!chartAxes) throw new Error(`No chart semantics are registered for ${id}.`);
   return { ...output, chartAxes };
@@ -286,15 +299,23 @@ function runJumpDiffusionLesson(values: Values): LessonOutput {
 function runGarchLesson(
   values: Values,
   attachment?: LessonDataAttachment,
+  storedSnapshot?: LessonCalibrationSnapshot,
 ): LessonOutput {
-  const calibrationDataset = attachment
-    ? parseImportedReturnDataset(attachment, {
-        frequency: "monthly",
-        returnConvention: "simple",
-      })
-    : illustrativeReturnDataset(240);
-  const calibration = fitGarch(calibrationDataset, 0);
-  const parameters = attachment
+  const storedGarchSnapshot =
+    storedSnapshot?.modelContract === "market-model/garch-1-1@1"
+      ? storedSnapshot
+      : null;
+  const calibrationDataset =
+    attachment || !storedGarchSnapshot
+      ? attachment
+        ? parseImportedReturnDataset(attachment, {
+            frequency: "monthly",
+            returnConvention: "simple",
+          })
+        : illustrativeReturnDataset(240)
+      : null;
+  const calibration = storedGarchSnapshot ?? fitGarch(calibrationDataset!, 0);
+  const parameters: GarchParameters = attachment || storedGarchSnapshot
     ? calibration.estimates
     : {
         omega: values.omega,
@@ -332,9 +353,14 @@ function runGarchLesson(
     },
     execution: { seed: 405, paths: 40, steps: 120, samplePaths: 8 },
   }).result;
+  const parameterSource = attachment
+    ? `Parameters were fitted from ${attachment.filename}. `
+    : storedGarchSnapshot
+      ? "Parameters were restored from the saved immutable calibration snapshot. "
+      : "The sliders supply the simulation parameters. ";
   const output = outputFromEnvelope(envelope, {
     headline: "Variance clusters because shocks feed the next step.",
-    explanation: `${attachment ? `Parameters were fitted from ${attachment.filename}. ` : "The sliders supply the simulation parameters. "}Persistence is ${fixed(result.diagnostics.persistence, 3)}. ${result.diagnostics.unconditionalVariance === null ? "No finite unconditional variance exists." : `The stationary unconditional variance is ${fixed(result.diagnostics.unconditionalVariance, 6)} per step.`}`,
+    explanation: `${parameterSource}Persistence is ${fixed(result.diagnostics.persistence, 3)}. ${result.diagnostics.unconditionalVariance === null ? "No finite unconditional variance exists." : `The stationary unconditional variance is ${fixed(result.diagnostics.unconditionalVariance, 6)} per step.`}`,
     metrics: [
       metric("α + β", fixed(result.diagnostics.persistence, 3), "Conditional-variance persistence", result.diagnostics.persistence >= 1 ? "caution" : "neutral"),
       metric("Initial volatility", percentage(Math.sqrt(result.sampledConditionalVariances[0][0])), "Per-step standard deviation"),
@@ -376,13 +402,21 @@ function runGarchLesson(
       fittedAlpha: calibration.estimates.alpha,
       fittedBeta: calibration.estimates.beta,
     },
+    ...(attachment || storedGarchSnapshot
+      ? {
+          calibrationSnapshot: calibration as Extract<
+            LessonCalibrationSnapshot,
+            { readonly modelContract: "market-model/garch-1-1@1" }
+          >,
+        }
+      : {}),
   });
-  return attachment
+  return attachment || storedGarchSnapshot
     ? {
         ...output,
         provenance: [
           ...output.provenance,
-          `User dataset: ${attachment.filename}`,
+          ...(attachment ? [`User dataset: ${attachment.filename}`] : []),
           `Calibration snapshot: ${calibration.contract}`,
         ],
       }
@@ -532,17 +566,26 @@ function runRetirementLesson(values: Values): LessonOutput {
 function runRegimeLesson(
   values: Values,
   attachment?: LessonDataAttachment,
+  storedSnapshot?: LessonCalibrationSnapshot,
 ): LessonOutput {
-  const dataset = attachment
-    ? parseImportedReturnDataset(attachment, {
-        frequency: "monthly",
-        returnConvention: "log",
-      })
-    : syntheticRegimeDataset(
-        Math.round(values.observations),
-        values.persistence,
-      );
-  const snapshot = fitOrderedRegimes(dataset);
+  const storedRegimeSnapshot =
+    storedSnapshot?.modelContract === "market-model/ordered-regimes@1"
+      ? storedSnapshot
+      : null;
+  const dataset =
+    attachment || !storedRegimeSnapshot
+      ? attachment
+        ? parseImportedReturnDataset(attachment, {
+            frequency: "monthly",
+            returnConvention: "log",
+          })
+        : syntheticRegimeDataset(
+            Math.round(values.observations),
+            values.persistence,
+          )
+      : null;
+  const snapshot = storedRegimeSnapshot ?? fitOrderedRegimes(dataset!);
+  const observationCount = snapshot.estimates.statePath.length;
   const counts = snapshot.estimates.statePath.reduce(
     (totals, state) => {
       totals[state] += 1;
@@ -555,9 +598,9 @@ function runRegimeLesson(
     headline: "Regime labels are fitted constructs with recorded provenance.",
     explanation: `The transparent classifier found mean returns ${snapshot.estimates.means.map((value) => percentage(value)).join(", ")} for bear, sideways, and bull bins.`,
     metrics: [
-      metric("Bear occupancy", percentage(counts[0] / dataset.rows.length), "Ordered low-return group"),
-      metric("Sideways occupancy", percentage(counts[1] / dataset.rows.length), "Ordered middle group"),
-      metric("Bull occupancy", percentage(counts[2] / dataset.rows.length), "Ordered high-return group"),
+      metric("Bear occupancy", percentage(counts[0] / observationCount), "Ordered low-return group"),
+      metric("Sideways occupancy", percentage(counts[1] / observationCount), "Ordered middle group"),
+      metric("Bull occupancy", percentage(counts[2] / observationCount), "Ordered high-return group"),
       metric("Fit iterations", String(snapshot.convergence.iterations), "Transparent one-pass classifier"),
     ],
     series: [
@@ -589,11 +632,19 @@ function runRegimeLesson(
       ...(attachment ? [`User dataset: ${attachment.filename}`] : []),
     ],
     compactSummary: {
-      observations: dataset.rows.length,
+      observations: observationCount,
       fittedBearMean: snapshot.estimates.means[0],
       fittedBullMean: snapshot.estimates.means[2],
       dataKind: snapshot.dataProvenance.kind,
     },
+    ...(attachment || storedRegimeSnapshot
+      ? {
+          calibrationSnapshot: snapshot as Extract<
+            LessonCalibrationSnapshot,
+            { readonly modelContract: "market-model/ordered-regimes@1" }
+          >,
+        }
+      : {}),
   };
 }
 
@@ -1020,6 +1071,7 @@ function runBacktestingLesson(
     timestamps,
     provenance: dataProvenance,
   });
+  const chartPoints = sampleEvenly(backtest.points, 800);
   return {
     resultContract: backtest.contract,
     headline: "A decomposition must add up; a backtest must look only backward.",
@@ -1034,13 +1086,13 @@ function runBacktestingLesson(
       {
         name: "VaR threshold",
         tone: "forest",
-        points: backtest.points.map((point) => ({ x: point.testIndex, y: point.valueAtRisk })),
+        points: chartPoints.map((point) => ({ x: point.testIndex, y: point.valueAtRisk })),
       },
       {
         name: "Realized loss",
         tone: "vermilion",
         style: "points",
-        points: backtest.points.map((point) => ({ x: point.testIndex, y: point.realizedLoss })),
+        points: chartPoints.map((point) => ({ x: point.testIndex, y: point.realizedLoss })),
       },
     ],
     diagnostics: [
@@ -1048,6 +1100,7 @@ function runBacktestingLesson(
       `First test date: ${backtest.points[0].testTimestamp} · source: ${backtest.dataProvenance?.label}`,
       `Contribution sum error: ${fixed(attribution.contributionSum - attribution.valueAtRisk, 8)}`,
       "Every estimation end index is strictly earlier than its test index.",
+      `Chart detail: ${chartPoints.length} of ${backtest.points.length} test observations retained.`,
     ],
     warnings: [...backtest.warnings],
     provenance: [
@@ -2839,10 +2892,35 @@ function monthlyTimestamps(count: number, startYear: number): string[] {
 
 function cumulativeGrowth(returns: readonly number[]): number[] {
   const values = [1];
-  for (const portfolioReturn of returns) {
-    values.push(values.at(-1)! * (1 + portfolioReturn));
+  for (const [index, portfolioReturn] of returns.entries()) {
+    if (!Number.isFinite(portfolioReturn) || portfolioReturn < -1) {
+      throw new QuantError(
+        "NUMERICAL_FAILURE",
+        "The simulated simple-return path cannot produce a finite wealth index.",
+        `returns.${index}`,
+      );
+    }
+    const nextValue = values.at(-1)! * (1 + portfolioReturn);
+    if (!Number.isFinite(nextValue)) {
+      throw new QuantError(
+        "NUMERICAL_FAILURE",
+        "The compounded wealth index exceeded the finite numerical range.",
+        `returns.${index}`,
+      );
+    }
+    values.push(nextValue);
   }
   return values;
+}
+
+function sampleEvenly<Value>(
+  values: readonly Value[],
+  maximum: number,
+): readonly Value[] {
+  if (values.length <= maximum) return values;
+  return Array.from({ length: maximum }, (_, index) =>
+    values[Math.round((index * (values.length - 1)) / (maximum - 1))],
+  );
 }
 
 function monteCarloPayoff(

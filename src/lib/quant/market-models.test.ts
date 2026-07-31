@@ -68,6 +68,16 @@ describe("return datasets and calibration snapshots", () => {
     expect(validateImpossibleLoss).toThrow(/below -100%/);
   });
 
+  it("compares timestamps chronologically instead of lexicographically", () => {
+    expect(() =>
+      validateReturnDataset({
+        ...dataset,
+        timestamps: ["01/02/2025", "12/31/2024"],
+        rows: [[0.01], [0.02]],
+      }),
+    ).toThrow(/increasing/);
+  });
+
   it("fits immutable, provenance-labelled GARCH and regime snapshots", () => {
     const garch = fitGarch(dataset);
     expect(garch.contract).toBe("calibration-snapshot@1");

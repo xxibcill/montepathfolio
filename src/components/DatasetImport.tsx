@@ -65,6 +65,8 @@ export function DatasetImport({
         ref={inputRef}
         className="visually-hidden"
         type="file"
+        tabIndex={-1}
+        aria-hidden="true"
         accept=".csv,text/csv"
         onChange={(event) => void chooseFile(event.target.files?.[0])}
       />

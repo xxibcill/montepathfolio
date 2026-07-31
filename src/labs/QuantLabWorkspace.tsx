@@ -17,6 +17,7 @@ import {
 import { loadStoredInputs, STORAGE_KEY } from "../lib/defaults";
 import { getLab, getLesson, lessonsForLab } from "./catalog";
 import type {
+  LessonCalibrationSnapshot,
   LessonDefinition,
   LessonOutput,
   LessonParameter,
@@ -24,6 +25,11 @@ import type {
 import { labHref, type LabId } from "./routes";
 import { modelNoteFor } from "./model-notes";
 import type { LessonDataAttachment } from "./lesson-worker-protocol";
+import {
+  loadLessonScenario,
+  portableLessonScenario,
+  saveLessonScenario,
+} from "./scenario-storage";
 
 export default function QuantLabWorkspace({
   lab: labId,
@@ -36,13 +42,30 @@ export default function QuantLabWorkspace({
   const lesson = getLesson(labId, initialLessonId);
   const lessons = lessonsForLab(labId);
   const defaults = useMemo(() => defaultValues(lesson), [lesson]);
+  const storedScenario = useMemo(
+    () => loadLessonScenario(labId, lesson, defaults),
+    [defaults, labId, lesson],
+  );
   const [values, setValues] = useState<Record<string, number>>(() =>
-    normalizeValues(lesson, loadScenario(labId, lesson, defaults)),
+    normalizeValues(lesson, storedScenario.values),
   );
   const [attachment, setAttachment] = useState<LessonDataAttachment | null>(null);
-  const { output, previous, status, error, run, cancel } = useLessonWorker(
+  const [calibrationSnapshot, setCalibrationSnapshot] =
+    useState<LessonCalibrationSnapshot | null>(storedScenario.calibrationSnapshot);
+  const {
+    output,
+    previous,
+    runValues,
+    runAttachment,
+    runCalibrationSnapshot,
+    status,
+    error,
+    run,
+    cancel,
+  } = useLessonWorker(
     lesson.id,
     values,
+    calibrationSnapshot ?? undefined,
   );
   const [inputsChanged, setInputsChanged] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -53,12 +76,17 @@ export default function QuantLabWorkspace({
     const normalized = normalizeValues(lesson, values);
     setValues(normalized);
     setInputsChanged(false);
-    run(normalized, attachment ?? undefined);
+    run(
+      normalized,
+      attachment ?? undefined,
+      attachment ? undefined : calibrationSnapshot ?? undefined,
+    );
   };
 
   const reset = () => {
     setValues(defaults);
     setAttachment(null);
+    setCalibrationSnapshot(null);
     setInputsChanged(true);
     setSaved(false);
   };
@@ -68,26 +96,38 @@ export default function QuantLabWorkspace({
     if (!preset) return;
     setValues({ ...defaults, ...preset.values });
     setAttachment(null);
+    setCalibrationSnapshot(null);
     setInputsChanged(true);
     setSaved(false);
   };
 
   const save = () => {
-    saveScenario(
+    saveLessonScenario(
       labId,
       lesson,
-      normalizeValues(lesson, values),
+      runValues,
       output,
-      attachment,
+      runAttachment,
     );
     setSaved(true);
   };
 
   const changedParameters = previous
     ? lesson.parameters.filter(
-        (parameter) => previous.values[parameter.id] !== values[parameter.id],
+        (parameter) => previous.values[parameter.id] !== runValues[parameter.id],
       )
     : [];
+  const dataSourceChanged = previous
+    ? !dataSourcesMatch(
+        previous.attachment,
+        previous.calibrationSnapshot,
+        runAttachment,
+        runCalibrationSnapshot,
+      )
+    : false;
+  const hasRunComparison = Boolean(
+    previous && (changedParameters.length > 0 || dataSourceChanged),
+  );
 
   return (
     <>
@@ -189,6 +229,7 @@ export default function QuantLabWorkspace({
                     attachment={attachment}
                     onChange={(nextAttachment) => {
                       setAttachment(nextAttachment);
+                      setCalibrationSnapshot(null);
                       setInputsChanged(true);
                       setSaved(false);
                     }}
@@ -208,7 +249,11 @@ export default function QuantLabWorkspace({
                 </p>
 
                 <div className="scenario-actions" aria-label="Scenario actions">
-                  <button type="button" onClick={save} disabled={status === "running"}>
+                  <button
+                    type="button"
+                    onClick={save}
+                    disabled={displayedStatus !== "current"}
+                  >
                     {saved ? <Check size={15} aria-hidden="true" /> : <Save size={15} aria-hidden="true" />}
                     {saved ? "Saved" : "Save inputs"}
                   </button>
@@ -219,19 +264,30 @@ export default function QuantLabWorkspace({
                         labId,
                         lesson,
                         normalizeValues(lesson, values),
-                        output,
-                        attachment,
+                        displayedStatus === "current" ? output : undefined,
+                        displayedStatus === "current"
+                          ? runAttachment
+                          : attachment ?? undefined,
                       )
                     }
                   >
                     <Download size={15} aria-hidden="true" /> Inputs
                   </button>
-                  <button type="button" onClick={() => downloadSummary(lesson, output)} disabled={status === "running"}>
+                  <button
+                    type="button"
+                    onClick={() => downloadSummary(lesson, output)}
+                    disabled={displayedStatus !== "current"}
+                  >
                     <Download size={15} aria-hidden="true" /> Summary
                   </button>
                 </div>
                 <p className="lesson-local-note">Saved locally per laboratory. No account or remote service.</p>
-                {lesson.id === "mean-variance" && status === "current" ? (
+                {storedScenario.needsDataReattachment && !attachment ? (
+                  <p className="dataset-import__error" role="status">
+                    This saved scenario used local data. Reattach the source CSV before rerunning it.
+                  </p>
+                ) : null}
+                {lesson.id === "mean-variance" && displayedStatus === "current" ? (
                   <button
                     className="projection-seed"
                     type="button"
@@ -255,17 +311,28 @@ export default function QuantLabWorkspace({
                   <p>{output.explanation}</p>
                 </section>
 
-                {previous && changedParameters.length > 0 ? (
+                {previous && hasRunComparison ? (
                   <section className="cause-effect-note">
                     <p className="eyebrow">Cause & effect</p>
                     <p>
-                      You changed {changedParameters.map((parameter) => parameter.label).join(", ")}.
-                      The prior run remains below for a fair, versioned comparison.
+                      {changedParameters.length > 0
+                        ? `You changed ${changedParameters.map((parameter) => parameter.label).join(", ")}. `
+                        : ""}
+                      {dataSourceChanged ? "The data source also changed. " : ""}
+                      The prior metrics and primary chart remain available for comparison.
                     </p>
-                    <div>
-                      <span>Previous: {previous.output.metrics[0]?.value}</span>
-                      <span>Current: {output.metrics[0]?.value}</span>
-                    </div>
+                    <MetricComparison
+                      previous={previous.output}
+                      current={output}
+                    />
+                    <details className="cause-effect-note__previous">
+                      <summary>View prior run chart</summary>
+                      <LessonChart
+                        title={`Previous ${lesson.title} experiment chart`}
+                        series={previous.output.series}
+                        {...previous.output.chartAxes}
+                      />
+                    </details>
                   </section>
                 ) : null}
 
@@ -451,6 +518,33 @@ function ParameterControl({
   );
 }
 
+function MetricComparison({
+  previous,
+  current,
+}: {
+  readonly previous: LessonOutput;
+  readonly current: LessonOutput;
+}) {
+  return (
+    <dl className="cause-effect-note__metrics">
+      {current.metrics.map((metric) => {
+        const prior = previous.metrics.find(
+          (candidate) => candidate.label === metric.label,
+        );
+        return (
+          <div key={metric.label}>
+            <dt>{metric.label}</dt>
+            <dd>
+              <span>Previous: {prior?.value ?? "Not reported"}</span>
+              <span>Current: {metric.value}</span>
+            </dd>
+          </div>
+        );
+      })}
+    </dl>
+  );
+}
+
 function defaultValues(lesson: LessonDefinition): Record<string, number> {
   return Object.fromEntries(
     lesson.parameters.map((parameter) => [parameter.id, parameter.defaultValue]),
@@ -499,105 +593,26 @@ function statusMessage(status: LessonRunStatus): string {
   return "Result matches the current inputs.";
 }
 
-function scenarioKey(lab: LabId): string {
-  return `montepathfolio/scenario/${lab}@2`;
-}
-
-function loadScenario(
-  lab: LabId,
-  lesson: LessonDefinition,
-  defaults: Record<string, number>,
-): Record<string, number> {
-  try {
-    const raw =
-      window.localStorage.getItem(scenarioKey(lab)) ??
-      window.localStorage.getItem(`montepathfolio/scenario/${lab}@1`);
-    if (!raw) return defaults;
-    const parsed = JSON.parse(raw) as {
-      contract?: string;
-      lessonId?: string;
-      inputs?: Record<string, unknown>;
-    };
-    if (
-      (parsed.contract !== "educational-scenario@1" &&
-        parsed.contract !== "educational-scenario@2") ||
-      parsed.lessonId !== lesson.id ||
-      !parsed.inputs
-    ) {
-      return defaults;
-    }
-    return Object.fromEntries(
-      lesson.parameters.map((parameter) => {
-        const value = parsed.inputs?.[parameter.id];
-        return [
-          parameter.id,
-          typeof value === "number" &&
-          Number.isFinite(value) &&
-          value >= parameter.minimum &&
-          value <= parameter.maximum
-            ? value
-            : parameter.defaultValue,
-        ];
-      }),
-    );
-  } catch {
-    return defaults;
-  }
-}
-
-function saveScenario(
-  lab: LabId,
-  lesson: LessonDefinition,
-  values: Readonly<Record<string, number>>,
-  output: LessonOutput,
-  attachment: LessonDataAttachment | null,
-): void {
-  try {
-    window.localStorage.setItem(
-      scenarioKey(lab),
-      JSON.stringify({
-        contract: "educational-scenario@2",
-        lab,
-        lessonId: lesson.id,
-        modelContract: output.resultContract,
-        engineProvenance: output.provenance,
-        fittedSnapshotReference: attachment
-          ? {
-              sourceContract: attachment.contract,
-              filename: attachment.filename,
-            }
-          : null,
-        inputs: values,
-      }),
-    );
-  } catch {
-    // Saving is optional; the experiment remains usable in this session.
-  }
-}
-
 function downloadScenario(
   lab: LabId,
   lesson: LessonDefinition,
   values: Readonly<Record<string, number>>,
-  output: LessonOutput,
-  attachment: LessonDataAttachment | null,
+  output?: LessonOutput,
+  attachment?: LessonDataAttachment,
 ): void {
+  const scenario = output
+    ? portableLessonScenario(lab, lesson, values, output, attachment)
+    : {
+        contract: "educational-scenario-inputs@1",
+        lab,
+        lessonId: lesson.id,
+        inputs: values,
+      };
   downloadText(
     `${lesson.id}-inputs.json`,
     JSON.stringify(
       {
-        contract: "educational-scenario@2",
-        lab,
-        lessonId: lesson.id,
-        modelContract: output.resultContract,
-        engineProvenance: output.provenance,
-        fittedSnapshotReference: attachment
-          ? {
-              sourceContract: attachment.contract,
-              filename: attachment.filename,
-            }
-          : null,
-        inputs: values,
+        ...scenario,
         labels: Object.fromEntries(lesson.parameters.map((parameter) => [parameter.id, `${parameter.label} (${parameter.unit})`])),
         presetKind: "illustrative",
         modelNotePath: lesson.modelNotePath,
@@ -607,6 +622,31 @@ function downloadScenario(
     ),
     "application/json",
   );
+}
+
+function dataSourcesMatch(
+  previousAttachment: LessonDataAttachment | undefined,
+  previousSnapshot: LessonCalibrationSnapshot | undefined,
+  currentAttachment: LessonDataAttachment | undefined,
+  currentSnapshot: LessonCalibrationSnapshot | undefined,
+): boolean {
+  if (previousAttachment || currentAttachment) {
+    return (
+      previousAttachment?.filename === currentAttachment?.filename &&
+      previousAttachment?.mediaType === currentAttachment?.mediaType &&
+      previousAttachment?.text === currentAttachment?.text
+    );
+  }
+  if (previousSnapshot || currentSnapshot) {
+    return (
+      previousSnapshot?.modelContract === currentSnapshot?.modelContract &&
+      previousSnapshot?.sampleStart === currentSnapshot?.sampleStart &&
+      previousSnapshot?.sampleEnd === currentSnapshot?.sampleEnd &&
+      previousSnapshot?.dataProvenance.label ===
+        currentSnapshot?.dataProvenance.label
+    );
+  }
+  return true;
 }
 
 function seedProjectionAllocation(output: LessonOutput): void {

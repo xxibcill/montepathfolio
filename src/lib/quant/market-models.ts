@@ -1,11 +1,14 @@
 import {
   QUANT_CORE_VERSION,
   QuantError,
+  assertIncreasingTimestamps,
   assertFinite,
   assertIntegerInRange,
   assertNonNegative,
   assertPositive,
   assertProbability,
+  asReturnSeries,
+  asVarianceSeries,
   correlation,
   createSemanticRandom,
   factorCorrelationMatrix,
@@ -19,6 +22,8 @@ import {
   type ModelEnvelope,
   type ModelWarning,
   type NumericMatrix,
+  type ReturnSeries,
+  type VarianceSeries,
 } from "./core";
 
 export const MARKET_MODELS_VERSION = "market-models@1";
@@ -98,16 +103,8 @@ export function validateReturnDataset(dataset: ReturnDataset): void {
   if (dataset.rows.length * dataset.assetIds.length > 5_000_000) {
     throw new QuantError("OUT_OF_RANGE", "Dataset exceeds the five-million-cell limit.");
   }
-  let previousTimestamp = "";
+  assertIncreasingTimestamps(dataset.timestamps);
   dataset.timestamps.forEach((timestamp, rowIndex) => {
-    if (!Number.isFinite(Date.parse(timestamp)) || timestamp <= previousTimestamp) {
-      throw new QuantError(
-        "INVALID_INPUT",
-        "Dataset timestamps must be valid, unique, and increasing.",
-        `timestamps.${rowIndex}`,
-      );
-    }
-    previousTimestamp = timestamp;
     const row = dataset.rows[rowIndex];
     if (row.length !== dataset.assetIds.length) {
       throw new QuantError(
@@ -379,8 +376,8 @@ export interface GarchInput {
 
 export interface GarchResult {
   readonly contract: "market-model/garch-1-1-result@1";
-  readonly sampledReturns: NumericMatrix;
-  readonly sampledConditionalVariances: NumericMatrix;
+  readonly sampledReturns: readonly ReturnSeries[];
+  readonly sampledConditionalVariances: readonly VarianceSeries[];
   readonly volatilityCone: readonly {
     readonly step: number;
     readonly expectedVariance: number;
@@ -405,8 +402,8 @@ export function runGarch(input: GarchInput): ModelEnvelope<GarchResult> {
       : input.initialVariance;
   const random = createSemanticRandom(input.execution.seed, input.contract);
   const sampleCount = Math.min(input.execution.samplePaths ?? 32, input.execution.paths);
-  const sampledReturns: number[][] = [];
-  const sampledConditionalVariances: number[][] = [];
+  const sampledReturns: ReturnSeries[] = [];
+  const sampledConditionalVariances: VarianceSeries[] = [];
 
   for (let pathIndex = 0; pathIndex < input.execution.paths; pathIndex += 1) {
     let conditionalVariance = initialVariance;
@@ -435,8 +432,8 @@ export function runGarch(input: GarchInput): ModelEnvelope<GarchResult> {
       }
     }
     if (pathIndex < sampleCount) {
-      sampledReturns.push(returns);
-      sampledConditionalVariances.push(variances);
+      sampledReturns.push(asReturnSeries(returns));
+      sampledConditionalVariances.push(asVarianceSeries(variances));
     }
   }
 

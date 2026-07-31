@@ -10,6 +10,43 @@ export const QUANT_CORE_VERSION = "quant-core@1";
 export type NumericVector = readonly number[];
 export type NumericMatrix = readonly (readonly number[])[];
 
+declare const semanticSeriesKind: unique symbol;
+
+export type SemanticSeries<Kind extends string> = readonly number[] & {
+  readonly [semanticSeriesKind]: Kind;
+};
+
+export type ReturnSeries = SemanticSeries<"return">;
+export type VarianceSeries = SemanticSeries<"variance">;
+export type WealthSeries = SemanticSeries<"wealth">;
+export type DrawdownSeries = SemanticSeries<"drawdown-probability">;
+export type IndexSeries = SemanticSeries<"index">;
+export type LossValueSeries = SemanticSeries<"positive-loss">;
+
+export function asReturnSeries(values: readonly number[]): ReturnSeries {
+  return values as ReturnSeries;
+}
+
+export function asVarianceSeries(values: readonly number[]): VarianceSeries {
+  return values as VarianceSeries;
+}
+
+export function asWealthSeries(values: readonly number[]): WealthSeries {
+  return values as WealthSeries;
+}
+
+export function asDrawdownSeries(values: readonly number[]): DrawdownSeries {
+  return values as DrawdownSeries;
+}
+
+export function asIndexSeries(values: readonly number[]): IndexSeries {
+  return values as IndexSeries;
+}
+
+export function asLossValueSeries(values: readonly number[]): LossValueSeries {
+  return values as LossValueSeries;
+}
+
 export type QuantIssueCode =
   | "INVALID_INPUT"
   | "NON_FINITE"
@@ -123,6 +160,24 @@ export function mean(values: NumericVector): number {
     runningMean += (values[index] - runningMean) / (index + 1);
   }
   return runningMean;
+}
+
+export function assertIncreasingTimestamps(
+  timestamps: readonly string[],
+  path = "timestamps",
+): void {
+  let previousEpoch = Number.NEGATIVE_INFINITY;
+  timestamps.forEach((timestamp, index) => {
+    const epoch = Date.parse(timestamp);
+    if (!Number.isFinite(epoch) || epoch <= previousEpoch) {
+      throw new QuantError(
+        "INVALID_INPUT",
+        "Timestamps must be valid, unique, and increasing.",
+        `${path}.${index}`,
+      );
+    }
+    previousEpoch = epoch;
+  });
 }
 
 export function sampleVariance(values: NumericVector): number {

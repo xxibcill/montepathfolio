@@ -43,6 +43,8 @@ describe("DatasetImport", () => {
       );
     });
     const input = container!.querySelector('input[type="file"]') as HTMLInputElement;
+    expect(input.tabIndex).toBe(-1);
+    expect(input.getAttribute("aria-hidden")).toBe("true");
     const file = new File(["fixture"], "returns.csv", { type: "text/csv" });
     Object.defineProperty(file, "text", {
       value: async () => "date,A\n2026-01-01,0.01\n2026-02-01,0.02",

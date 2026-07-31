@@ -185,6 +185,18 @@ describe("native Portfolio Projection Lab request@2", () => {
     });
   });
 
+  it("keeps bounded sampled path identities stable when path count increases", () => {
+    const cases = [marketCase("jump", ACTIVE_JUMP)];
+    const short = requireResult(
+      request(cases, "jump", { paths: 80, steps: 8, samplePaths: 12 }),
+    );
+    const morePaths = requireResult(
+      request(cases, "jump", { paths: 120, steps: 8, samplePaths: 12 }),
+    );
+
+    expect(morePaths.primary.samples).toEqual(short.primary.samples);
+  });
+
   it("reproduces constant-volatility GBM when alpha and beta are zero", () => {
     const cases = [
       marketCase("gbm", GBM),

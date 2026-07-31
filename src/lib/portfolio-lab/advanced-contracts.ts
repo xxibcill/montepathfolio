@@ -1,4 +1,10 @@
-import type { NumericMatrix } from "../quant/core";
+import type {
+  DrawdownSeries,
+  IndexSeries,
+  LossValueSeries,
+  NumericMatrix,
+  WealthSeries,
+} from "../quant/core";
 
 /**
  * Native Portfolio Projection Lab contract introduced after the standalone
@@ -221,33 +227,35 @@ export interface PortfolioLabV2CaseSummary {
 
 export interface PortfolioLabV2HoldingSeries {
   readonly assetId: string;
-  readonly values: readonly number[];
+  readonly values: WealthSeries;
 }
 
 export interface PortfolioLabV2SampledPath {
   readonly pathIndex: number;
-  readonly wealth: readonly number[];
+  readonly wealth: WealthSeries;
   readonly holdings: readonly PortfolioLabV2HoldingSeries[];
   /** Market-only index used to keep cash flows out of drawdown. */
-  readonly cashFlowNeutralIndex: readonly number[];
-  readonly drawdown: readonly number[];
+  readonly cashFlowNeutralIndex: IndexSeries;
+  readonly drawdown: DrawdownSeries;
   readonly totalWithdrawn: number;
 }
 
-export interface PortfolioLabV2Percentiles {
-  readonly p05: readonly number[];
-  readonly p10: readonly number[];
-  readonly p50: readonly number[];
-  readonly p90: readonly number[];
-  readonly p95: readonly number[];
+export interface PortfolioLabV2Percentiles<
+  Series extends readonly number[] = readonly number[],
+> {
+  readonly p05: Series;
+  readonly p10: Series;
+  readonly p50: Series;
+  readonly p90: Series;
+  readonly p95: Series;
 }
 
 export interface PortfolioLabV2Distribution {
-  readonly terminalWealth: readonly number[];
-  readonly terminalEconomicLosses: readonly number[];
-  readonly maximumDrawdowns: readonly number[];
-  readonly wealthPercentiles: PortfolioLabV2Percentiles;
-  readonly drawdownPercentiles: PortfolioLabV2Percentiles;
+  readonly terminalWealth: WealthSeries;
+  readonly terminalEconomicLosses: LossValueSeries;
+  readonly maximumDrawdowns: DrawdownSeries;
+  readonly wealthPercentiles: PortfolioLabV2Percentiles<WealthSeries>;
+  readonly drawdownPercentiles: PortfolioLabV2Percentiles<DrawdownSeries>;
 }
 
 export interface PortfolioLabV2JumpEvent {

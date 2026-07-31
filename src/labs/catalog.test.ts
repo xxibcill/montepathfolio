@@ -79,6 +79,24 @@ describe("educational lesson catalog", () => {
     }
   });
 
+  it("keeps non-annual percentages labeled with their actual units", () => {
+    const parameter = (lessonId: string, parameterId: string) =>
+      LESSONS.find(({ id }) => id === lessonId)!.parameters.find(
+        ({ id }) => id === parameterId,
+      )!;
+
+    expect(parameter("var-cvar", "volatility").unit).toBe("per-day decimal");
+    expect(parameter("capm", "riskFree").unit).toBe(
+      "simple decimal per observation",
+    );
+    expect(parameter("retirement-sequence", "stockAllocation").unit).toBe(
+      "portfolio fraction",
+    );
+    expect(parameter("jump-diffusion", "meanJump").unit).toBe(
+      "log return per jump",
+    );
+  });
+
   it.each(LESSONS)(
     "runs $id with valid defaults and returns finite educational output",
     (lesson) => {
@@ -115,6 +133,19 @@ describe("educational lesson catalog", () => {
     },
     20_000,
   );
+
+  it("rejects incomplete, out-of-range, and unnamed choice payloads", () => {
+    const lesson = LESSONS.find(({ id }) => id === "historical-bootstrap")!;
+    const defaults = defaultValues(lesson);
+
+    expect(() => runLesson(lesson.id, {})).toThrow(/finite number/i);
+    expect(() =>
+      runLesson(lesson.id, { ...defaults, steps: 1_000_000 }),
+    ).toThrow(/between/i);
+    expect(() =>
+      runLesson(lesson.id, { ...defaults, bootstrapMethod: 0.5 }),
+    ).toThrow(/named choices/i);
+  });
 });
 
 describe("learner-facing quantitative integrations", () => {
@@ -141,6 +172,30 @@ describe("learner-facing quantitative integrations", () => {
     expect(output.diagnostics.join(" ")).toContain("timestamp-intersection");
     expect(output.diagnostics.join(" ")).toContain("Look-ahead guard");
     expect(output.compactSummary.rollingWindowCount).toBeGreaterThan(0);
+  });
+
+  it("bounds learner-facing backtest chart detail for large imports", () => {
+    const lesson = LESSONS.find(({ id }) => id === "risk-backtesting")!;
+    const rows = Array.from({ length: 1_200 }, (_, index) => {
+      const date = new Date(Date.UTC(2000, 0, index + 1))
+        .toISOString()
+        .slice(0, 10);
+      return `${date},${index % 19 === 0 ? -0.03 : 0.004}`;
+    });
+    const output = runLesson(
+      lesson.id,
+      defaultValues(lesson),
+      {
+        contract: LESSON_DATA_ATTACHMENT_CONTRACT,
+        filename: "large-backtest.csv",
+        mediaType: "text/csv",
+        text: ["date,Portfolio", ...rows].join("\n"),
+      },
+    );
+
+    expect(output.series[0].points).toHaveLength(800);
+    expect(output.series[1].points).toHaveLength(800);
+    expect(output.diagnostics.join(" ")).toContain("of 1140");
   });
 
   it("compares one European contract across analytical, tree, and Monte Carlo methods", () => {
@@ -196,6 +251,17 @@ describe("learner-facing quantitative integrations", () => {
     expect(output.compactSummary.terminalSpotPercentile05).toBeLessThan(
       output.compactSummary.terminalSpotPercentile95 as number,
     );
+  });
+
+  it("rejects non-finite GARCH wealth output at valid control boundaries", () => {
+    expect(() =>
+      run("garch", {
+        omega: 0.001,
+        alpha: 0.5,
+        beta: 1.1,
+        degreesOfFreedom: 40,
+      }),
+    ).toThrow(/finite|numerical|wealth/i);
   });
 
   it("retains bounded small-tree nodes and explains when a large node table is omitted", () => {

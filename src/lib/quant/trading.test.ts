@@ -207,7 +207,12 @@ describe("agent market", () => {
         { id: "fund", kind: "fundamental" as const, orderSize: 1, fundamentalValue: 102 },
         { id: "trend", kind: "trend" as const, orderSize: 1 },
         { id: "noise", kind: "noise" as const, orderSize: 1 },
-        { id: "risk", kind: "risk-parity" as const, orderSize: 1 },
+        {
+          id: "risk",
+          kind: "risk-budget" as const,
+          orderSize: 1,
+          targetRiskBudget: 100,
+        },
       ],
     };
     const output = runAgentMarket(input);
