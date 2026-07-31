@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useCanvasSize } from "../hooks/useCanvasSize";
+import { useThemeRevision } from "../hooks/useTheme";
 import {
   appendSeriesPath,
   CHART_COLORS as COLORS,
@@ -13,7 +14,7 @@ import {
   strokeSeries,
 } from "../lib/chart";
 import { REPRESENTATIVE_REGIME_PATH_COUNT } from "../lib/regimes";
-import type { SimulationResult } from "../types/simulation";
+import type { PortfolioProjectionResult } from "../labs/portfolio-projection-model";
 
 type ValueMode = "nominal" | "real";
 
@@ -27,7 +28,7 @@ const REPRESENTATIVE_PATH_COLORS = [
 ] as const;
 
 export interface PathChartProps {
-  result: SimulationResult;
+  result: PortfolioProjectionResult;
   targetValue?: number;
   valueMode?: ValueMode;
   className?: string;
@@ -45,6 +46,7 @@ export function PathChart({
     minHeight: 280,
     maxHeight: 440,
   });
+  const themeRevision = useThemeRevision();
   const target = targetValue ?? result.inputs.targetValue;
 
   const summary = useMemo(() => {
@@ -431,7 +433,7 @@ export function PathChart({
         dash: [6, 4],
       });
     }
-  }, [dpr, height, result, target, valueMode, width]);
+  }, [dpr, height, result, target, themeRevision, valueMode, width]);
 
   return (
     <figure className={`chart-figure path-chart ${className}`.trim()}>

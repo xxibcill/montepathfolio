@@ -1,31 +1,31 @@
 import type {
-  HMMConfiguration,
-  MarketAssumptions,
-  Regime,
-  TransitionMatrix,
-} from "../types/simulation";
+  PortfolioProjectionHmmConfiguration,
+  PortfolioProjectionMarketAssumptions,
+  PortfolioProjectionRegime,
+  PortfolioProjectionTransitionMatrix,
+} from "../types/portfolio-projection";
 
 export const REGIME_ORDER = ["bull", "bear", "sideways"] as const;
 export const REPRESENTATIVE_REGIME_PATH_COUNT = 6;
 
-export const REGIME_LABELS: Record<Regime, string> = {
+export const REGIME_LABELS: Record<PortfolioProjectionRegime, string> = {
   bull: "Bull",
   bear: "Bear",
   sideways: "Sideways",
 };
 
-export const REGIME_DESCRIPTIONS: Record<Regime, string> = {
+export const REGIME_DESCRIPTIONS: Record<PortfolioProjectionRegime, string> = {
   bull: "Positive return · moderate volatility",
   bear: "Negative return · high volatility",
   sideways: "Low return · restrained volatility",
 };
 
 export function updateTransitionProbability(
-  configuration: HMMConfiguration,
-  fromRegime: Regime,
-  toRegime: Regime,
+  configuration: PortfolioProjectionHmmConfiguration,
+  fromRegime: PortfolioProjectionRegime,
+  toRegime: PortfolioProjectionRegime,
   nextProbability: number,
-): HMMConfiguration {
+): PortfolioProjectionHmmConfiguration {
   const clampedProbability = Math.max(0, Math.min(1, nextProbability));
   const previousRow = configuration.transitionMatrix[fromRegime];
   const remainingRegimes = REGIME_ORDER.filter(
@@ -59,7 +59,7 @@ export function updateTransitionProbability(
 }
 
 export function portfolioRegimeMoments(
-  assumptions: MarketAssumptions,
+  assumptions: PortfolioProjectionMarketAssumptions,
   stockAllocation: number,
 ): { expectedReturn: number; volatility: number } {
   const bondAllocation = 1 - stockAllocation;
@@ -84,8 +84,8 @@ export function portfolioRegimeMoments(
 }
 
 export function transitionMatricesEqual(
-  left: TransitionMatrix,
-  right: TransitionMatrix,
+  left: PortfolioProjectionTransitionMatrix,
+  right: PortfolioProjectionTransitionMatrix,
 ): boolean {
   return REGIME_ORDER.every((fromRegime) =>
     REGIME_ORDER.every(
@@ -96,8 +96,8 @@ export function transitionMatricesEqual(
 }
 
 export function hmmConfigurationsEqual(
-  left: HMMConfiguration,
-  right: HMMConfiguration,
+  left: PortfolioProjectionHmmConfiguration,
+  right: PortfolioProjectionHmmConfiguration,
 ): boolean {
   return (
     REGIME_ORDER.every(

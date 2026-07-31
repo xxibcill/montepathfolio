@@ -2,23 +2,23 @@ import type { CSSProperties } from "react";
 import { useNumberDraft } from "../hooks/useNumberDraft";
 import { TransitionMatrixEditor } from "./TransitionMatrixEditor";
 import type {
-  AssetAssumptions,
-  HMMConfiguration,
-  RebalanceFrequency,
-  SimulationInputs,
-  SimulationModel,
-} from "../types/simulation";
+  PortfolioProjectionAssetAssumptions,
+  PortfolioProjectionHmmConfiguration,
+  PortfolioProjectionInputs,
+  PortfolioProjectionModel,
+  PortfolioProjectionRebalanceFrequency,
+} from "../types/portfolio-projection";
 
 const FIXED_PATH_COUNT = 1_000;
 
 type AssetKey = "stocks" | "bonds";
 
 interface ScenarioControlsProps {
-  inputs: SimulationInputs;
+  inputs: PortfolioProjectionInputs;
   /**
    * Receives a complete, simulation-ready input snapshot after every edit.
    */
-  onChange: (nextInputs: SimulationInputs) => void;
+  onChange: (nextInputs: PortfolioProjectionInputs) => void;
   isRunning?: boolean;
   isDirty?: boolean;
 }
@@ -117,8 +117,11 @@ function NumberControl({
 
 interface AssetAssumptionControlsProps {
   asset: AssetKey;
-  assumptions: AssetAssumptions;
-  onChange: (field: keyof AssetAssumptions, value: number) => void;
+  assumptions: PortfolioProjectionAssetAssumptions;
+  onChange: (
+    field: keyof PortfolioProjectionAssetAssumptions,
+    value: number,
+  ) => void;
 }
 
 function AssetAssumptionControls({
@@ -253,16 +256,16 @@ export function ScenarioControls({
   const stockPercent = Math.round(inputs.stockAllocation * 100);
   const bondPercent = 100 - stockPercent;
 
-  function updateInput<Key extends keyof SimulationInputs>(
+  function updateInput<Key extends keyof PortfolioProjectionInputs>(
     key: Key,
-    value: SimulationInputs[Key],
+    value: PortfolioProjectionInputs[Key],
   ) {
     onChange({ ...inputs, [key]: value, pathCount: FIXED_PATH_COUNT });
   }
 
   function updateAsset(
     asset: AssetKey,
-    field: keyof AssetAssumptions,
+    field: keyof PortfolioProjectionAssetAssumptions,
     value: number,
   ) {
     onChange({
@@ -272,7 +275,7 @@ export function ScenarioControls({
     });
   }
 
-  function updateHMM(hmm: HMMConfiguration) {
+  function updateHMM(hmm: PortfolioProjectionHmmConfiguration) {
     onChange({ ...inputs, hmm, pathCount: FIXED_PATH_COUNT });
   }
 
@@ -321,7 +324,7 @@ export function ScenarioControls({
                 onChange={(event) =>
                   updateInput(
                     "model",
-                    event.currentTarget.value as SimulationModel,
+                    event.currentTarget.value as PortfolioProjectionModel,
                   )
                 }
               />
@@ -480,7 +483,8 @@ export function ScenarioControls({
                 onChange={(event) =>
                   updateInput(
                     "rebalanceFrequency",
-                    event.currentTarget.value as RebalanceFrequency,
+                    event.currentTarget
+                      .value as PortfolioProjectionRebalanceFrequency,
                   )
                 }
               >

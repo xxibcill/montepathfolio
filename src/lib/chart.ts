@@ -1,19 +1,30 @@
+function themeColor(variable: string, fallback: string): string {
+  if (typeof document === "undefined") return fallback;
+  return getComputedStyle(document.documentElement).getPropertyValue(variable).trim() || fallback;
+}
+
+function themeAlpha(light: string, dark: string): string {
+  if (typeof document === "undefined") return light;
+  return document.documentElement.dataset.theme === "dark" ? dark : light;
+}
+
+/** Canvas colors are getters so a theme change is reflected on the next draw. */
 export const CHART_COLORS = {
-  paper: "#fbf7ef",
-  ink: "#29332d",
-  mutedInk: "#68736b",
-  grid: "#ded9ce",
-  forest: "#376c4d",
-  path: "rgba(45, 67, 54, 0.085)",
-  drawdownPath: "rgba(45, 67, 54, 0.075)",
-  outerBand: "rgba(55, 108, 77, 0.11)",
-  innerBand: "rgba(55, 108, 77, 0.22)",
-  forestFill: "rgba(55, 108, 77, 0.62)",
-  forestOutline: "rgba(41, 51, 45, 0.5)",
-  bandOutline: "rgba(41, 51, 45, 0.42)",
-  percentileLine: "rgba(41, 51, 45, 0.48)",
-  vermilion: "#a94734",
-} as const;
+  get paper() { return themeColor("--paper-light", "#fbf7ef"); },
+  get ink() { return themeColor("--ink", "#29332d"); },
+  get mutedInk() { return themeColor("--ink-faint", "#68736b"); },
+  get grid() { return themeColor("--line", "#ded9ce"); },
+  get forest() { return themeColor("--forest", "#376c4d"); },
+  get path() { return themeAlpha("rgba(45, 67, 54, 0.085)", "rgba(187, 220, 196, 0.11)"); },
+  get drawdownPath() { return themeAlpha("rgba(45, 67, 54, 0.075)", "rgba(187, 220, 196, 0.1)"); },
+  get outerBand() { return themeAlpha("rgba(55, 108, 77, 0.11)", "rgba(127, 204, 153, 0.13)"); },
+  get innerBand() { return themeAlpha("rgba(55, 108, 77, 0.22)", "rgba(127, 204, 153, 0.24)"); },
+  get forestFill() { return themeAlpha("rgba(55, 108, 77, 0.62)", "rgba(127, 204, 153, 0.68)"); },
+  get forestOutline() { return themeAlpha("rgba(41, 51, 45, 0.5)", "rgba(226, 232, 226, 0.58)"); },
+  get bandOutline() { return themeAlpha("rgba(41, 51, 45, 0.42)", "rgba(226, 232, 226, 0.5)"); },
+  get percentileLine() { return themeAlpha("rgba(41, 51, 45, 0.48)", "rgba(226, 232, 226, 0.6)"); },
+  get vermilion() { return themeColor("--vermilion", "#a94734"); },
+};
 
 export const compactCurrency = new Intl.NumberFormat("en-US", {
   style: "currency",

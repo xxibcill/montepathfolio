@@ -263,7 +263,7 @@ function toLegacyMetrics(metrics: PortfolioMetrics): SimulationMetrics {
       metrics.drawdown.probabilityUnrecovered,
     averageRecoveryMonths:
       metrics.drawdown.averageCompletedRecoverySteps,
-    expectedShortfall: metrics.loss.tailCapitalShortfall,
+    tailCapitalShortfall: metrics.loss.tailCapitalShortfall,
     averageTargetShortfall: metrics.goal.averageShortfallRatio,
     totalContributed: metrics.wealth.totalContributed,
   };

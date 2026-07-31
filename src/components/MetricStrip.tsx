@@ -1,4 +1,4 @@
-import type { SimulationResult } from "../types/simulation";
+import type { PortfolioProjectionResult } from "../labs/portfolio-projection-model";
 import {
   formatCompactCurrency,
   formatCurrency,
@@ -6,7 +6,7 @@ import {
 } from "../lib/format";
 
 interface MetricStripProps {
-  result?: SimulationResult | null;
+  result?: PortfolioProjectionResult | null;
   isRunning?: boolean;
 }
 
@@ -17,7 +17,7 @@ interface MetricDefinition {
   tone?: "positive" | "caution";
 }
 
-function buildMetrics(result: SimulationResult): MetricDefinition[] {
+function buildMetrics(result: PortfolioProjectionResult): MetricDefinition[] {
   const { metrics, inputs } = result;
 
   return [

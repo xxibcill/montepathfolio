@@ -8,10 +8,10 @@ import type {
   ThreeStateVector,
 } from "../types/hmm-model";
 import type {
-  HMMConfiguration,
-  MarketAssumptions,
-  Regime,
-} from "../types/simulation";
+  PortfolioProjectionHmmConfiguration,
+  PortfolioProjectionMarketAssumptions,
+  PortfolioProjectionRegime,
+} from "../types/portfolio-projection";
 import { REGIME_ORDER } from "./regimes";
 
 const STATE_COUNT = REGIME_ORDER.length;
@@ -41,13 +41,17 @@ export function parseHMMModelPayload(value: unknown): HMMModelPayload {
 
 export function createHMMConfiguration(
   payload: HMMModelPayload,
-): HMMConfiguration {
-  const stateIndex = (regime: Regime) =>
+): PortfolioProjectionHmmConfiguration {
+  const stateIndex = (regime: PortfolioProjectionRegime) =>
     payload.states.findIndex((state) => state.label === regime);
-  const state = (regime: Regime) => payload.states[stateIndex(regime)];
-  const probability = (from: Regime, to: Regime) =>
+  const state = (regime: PortfolioProjectionRegime) =>
+    payload.states[stateIndex(regime)];
+  const probability = (
+    from: PortfolioProjectionRegime,
+    to: PortfolioProjectionRegime,
+  ) =>
     payload.transitionMatrix[stateIndex(from)][stateIndex(to)];
-  const currentProbability = (regime: Regime) =>
+  const currentProbability = (regime: PortfolioProjectionRegime) =>
     payload.currentStateProbabilities[stateIndex(regime)];
 
   return {
@@ -208,7 +212,9 @@ function parseHistory(value: unknown): HMMHistoryObservation[] {
   });
 }
 
-function toMarketAssumptions(state: HMMModelState): MarketAssumptions {
+function toMarketAssumptions(
+  state: HMMModelState,
+): PortfolioProjectionMarketAssumptions {
   return {
     stocks: {
       expectedReturn: state.stocks.annualReturn,
@@ -294,13 +300,16 @@ function requireNumberInRange(
   return number;
 }
 
-function requireRegime(value: unknown, name: string): Regime {
+function requireRegime(
+  value: unknown,
+  name: string,
+): PortfolioProjectionRegime {
   if (
     typeof value !== "string" ||
-    !REGIME_ORDER.includes(value as Regime)
+    !REGIME_ORDER.includes(value as PortfolioProjectionRegime)
   ) {
     throw new Error(`${name} must be bull, bear, or sideways`);
   }
 
-  return value as Regime;
+  return value as PortfolioProjectionRegime;
 }

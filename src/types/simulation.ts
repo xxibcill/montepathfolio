@@ -62,7 +62,7 @@ export interface SimulationMetrics {
    * Mean loss versus contributed capital among the lowest 5% of ending values.
    * A value of zero means even the tail sample finished above contributions.
    */
-  expectedShortfall: number;
+  tailCapitalShortfall: number;
   /**
    * Mean percentage gap versus the target among paths that finish below it.
    * A value of zero means every path reaches the target or the target is zero.

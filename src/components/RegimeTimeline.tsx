@@ -1,6 +1,6 @@
 import { DEFAULT_HMM_MODEL } from "../lib/defaults";
 import { REGIME_LABELS } from "../lib/regimes";
-import type { Regime } from "../types/simulation";
+import type { PortfolioProjectionRegime } from "../types/portfolio-projection";
 
 const WIDTH = 960;
 const HEIGHT = 270;
@@ -29,10 +29,14 @@ function buildPricePath(): string {
 }
 
 function buildSegments() {
-  const segments: Array<{ start: number; end: number; state: Regime }> = [];
+  const segments: Array<{
+    start: number;
+    end: number;
+    state: PortfolioProjectionRegime;
+  }> = [];
 
   for (const [index, observation] of history.entries()) {
-    const state: Regime = observation.state;
+    const state: PortfolioProjectionRegime = observation.state;
     const previous = segments.at(-1);
     if (previous?.state === state) {
       previous.end = index;
