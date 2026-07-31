@@ -12,9 +12,19 @@ import {
   niceCeiling,
   strokeSeries,
 } from "../lib/chart";
+import { REPRESENTATIVE_REGIME_PATH_COUNT } from "../lib/regimes";
 import type { SimulationResult } from "../types/simulation";
 
 type ValueMode = "nominal" | "real";
+
+const REPRESENTATIVE_PATH_COLORS = [
+  "#0f766e",
+  "#c2410c",
+  "#7c3aed",
+  "#0369a1",
+  "#a16207",
+  "#be185d",
+] as const;
 
 export interface PathChartProps {
   result: SimulationResult;
@@ -53,7 +63,12 @@ export function PathChart({
     const simulationCount =
       result.terminalValues.length || result.inputs.pathCount;
 
-    return `${simulationCount.toLocaleString()} simulated portfolio paths over ${years} years. The median ending value is ${fullCurrency.format(median)}${valueMode === "real" ? " in today's dollars" : ""}. Ninety percent of outcomes finish between ${fullCurrency.format(lower)} and ${fullCurrency.format(upper)}. ${formatProbability(result.metrics.probabilityOfTarget)} reach the ${fullCurrency.format(target)} target.`;
+    const representativePathSummary =
+      result.inputs.model === "hmm"
+        ? " Six numbered highlighted paths correspond to the regime strips below."
+        : "";
+
+    return `${simulationCount.toLocaleString()} simulated portfolio paths over ${years} years. The median ending value is ${fullCurrency.format(median)}${valueMode === "real" ? " in today's dollars" : ""}. Ninety percent of outcomes finish between ${fullCurrency.format(lower)} and ${fullCurrency.format(upper)}. ${formatProbability(result.metrics.probabilityOfTarget)} reach the ${fullCurrency.format(target)} target.${representativePathSummary}`;
   }, [result, target, valueMode]);
 
   useEffect(() => {
@@ -189,12 +204,23 @@ export function PathChart({
       1,
       Math.ceil(result.samplePaths.length / pathLimit),
     );
+    const representativePathCount =
+      result.inputs.model === "hmm"
+        ? Math.min(
+            REPRESENTATIVE_REGIME_PATH_COUNT,
+            result.samplePaths.length,
+            result.sampleRegimePaths.length,
+          )
+        : 0;
     context.beginPath();
     for (
       let pathIndex = 0;
       pathIndex < result.samplePaths.length;
       pathIndex += pathStep
     ) {
+      if (pathIndex < representativePathCount) {
+        continue;
+      }
       const path = result.samplePaths[pathIndex];
       if (!path) {
         continue;
@@ -226,6 +252,21 @@ export function PathChart({
       xForIndex,
       yForValue,
       fillStyle: COLORS.innerBand,
+    });
+
+    const representativePaths = result.samplePaths.slice(
+      0,
+      representativePathCount,
+    );
+    representativePaths.forEach((path, index) => {
+      strokeSeries(context, {
+        values: path,
+        count: Math.min(count, path.length),
+        xForIndex,
+        yForValue,
+        color: REPRESENTATIVE_PATH_COLORS[index],
+        width: 1.35,
+      });
     });
 
     // Dotted decile boundaries remain identifiable in monochrome.
@@ -272,6 +313,30 @@ export function PathChart({
       context.stroke();
       context.setLineDash([]);
     }
+
+    context.font =
+      '700 8px "Instrument Sans Variable", "Avenir Next", sans-serif';
+    context.textAlign = "center";
+    context.textBaseline = "middle";
+    representativePaths.forEach((path, index) => {
+      const markerIndex = Math.round(
+        ((index + 1) / (representativePaths.length + 1)) * (count - 1),
+      );
+      const value = path[markerIndex];
+      if (value === undefined) return;
+
+      const markerX = xForIndex(markerIndex);
+      const markerY = yForValue(value, markerIndex);
+      context.beginPath();
+      context.arc(markerX, markerY, 7, 0, Math.PI * 2);
+      context.fillStyle = COLORS.paper;
+      context.fill();
+      context.strokeStyle = REPRESENTATIVE_PATH_COLORS[index];
+      context.lineWidth = 1.5;
+      context.stroke();
+      context.fillStyle = REPRESENTATIVE_PATH_COLORS[index];
+      context.fillText(String(index + 1).padStart(2, "0"), markerX, markerY);
+    });
 
     context.restore();
 
@@ -393,7 +458,7 @@ export function PathChart({
           Each faint line is one possible path; bands show the 5th–95th and
           10th–90th percentile ranges
           {result.inputs.model === "hmm"
-            ? ", with regime strips sampled below."
+            ? "; numbered paths match the regime strips below."
             : "."}
         </span>
       </figcaption>

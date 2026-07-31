@@ -1,9 +1,9 @@
 import type { CSSProperties } from "react";
 import { useNumberDraft } from "../hooks/useNumberDraft";
-import { REGIME_ORDER } from "../lib/defaults";
 import {
   portfolioRegimeMoments,
   REGIME_LABELS,
+  REGIME_ORDER,
   updateTransitionProbability,
 } from "../lib/regimes";
 import type {

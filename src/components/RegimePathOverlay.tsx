@@ -1,5 +1,8 @@
-import { REGIME_ORDER } from "../lib/defaults";
-import { REGIME_LABELS } from "../lib/regimes";
+import {
+  REGIME_LABELS,
+  REGIME_ORDER,
+  REPRESENTATIVE_REGIME_PATH_COUNT,
+} from "../lib/regimes";
 import type { Regime, SimulationResult } from "../types/simulation";
 
 interface RegimePathOverlayProps {
@@ -41,7 +44,10 @@ export function RegimePathOverlay({ result }: RegimePathOverlayProps) {
     return null;
   }
 
-  const displayedPaths = result.sampleRegimePaths.slice(0, 6);
+  const displayedPaths = result.sampleRegimePaths.slice(
+    0,
+    REPRESENTATIVE_REGIME_PATH_COUNT,
+  );
 
   return (
     <section
@@ -75,9 +81,9 @@ export function RegimePathOverlay({ result }: RegimePathOverlayProps) {
         ))}
       </div>
       <p>
-        Six retained paths are shown for legibility. Each thin band is the
-        hidden state that supplied that path’s return, volatility, and
-        correlation at each month.
+        Numbered strips match the highlighted portfolio paths above. Each band
+        shows the hidden state that supplied that path’s return, volatility,
+        and correlation at each month.
       </p>
     </section>
   );

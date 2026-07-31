@@ -1,9 +1,12 @@
 import type {
   HMMConfiguration,
+  MarketAssumptions,
   Regime,
-  RegimeAssumptions,
+  TransitionMatrix,
 } from "../types/simulation";
-import { REGIME_ORDER } from "./defaults";
+
+export const REGIME_ORDER = ["bull", "bear", "sideways"] as const;
+export const REPRESENTATIVE_REGIME_PATH_COUNT = 6;
 
 export const REGIME_LABELS: Record<Regime, string> = {
   bull: "Bull",
@@ -56,7 +59,7 @@ export function updateTransitionProbability(
 }
 
 export function portfolioRegimeMoments(
-  assumptions: RegimeAssumptions,
+  assumptions: MarketAssumptions,
   stockAllocation: number,
 ): { expectedReturn: number; volatility: number } {
   const bondAllocation = 1 - stockAllocation;
@@ -78,4 +81,39 @@ export function portfolioRegimeMoments(
       bondAllocation * assumptions.bonds.expectedReturn,
     volatility: Math.sqrt(Math.max(0, variance)),
   };
+}
+
+export function transitionMatricesEqual(
+  left: TransitionMatrix,
+  right: TransitionMatrix,
+): boolean {
+  return REGIME_ORDER.every((fromRegime) =>
+    REGIME_ORDER.every(
+      (toRegime) =>
+        left[fromRegime][toRegime] === right[fromRegime][toRegime],
+    ),
+  );
+}
+
+export function hmmConfigurationsEqual(
+  left: HMMConfiguration,
+  right: HMMConfiguration,
+): boolean {
+  return (
+    REGIME_ORDER.every(
+      (regime) =>
+        left.regimes[regime].stocks.expectedReturn ===
+          right.regimes[regime].stocks.expectedReturn &&
+        left.regimes[regime].stocks.volatility ===
+          right.regimes[regime].stocks.volatility &&
+        left.regimes[regime].bonds.expectedReturn ===
+          right.regimes[regime].bonds.expectedReturn &&
+        left.regimes[regime].bonds.volatility ===
+          right.regimes[regime].bonds.volatility &&
+        left.regimes[regime].correlation ===
+          right.regimes[regime].correlation &&
+        left.currentStateProbabilities[regime] ===
+          right.currentStateProbabilities[regime]
+    ) && transitionMatricesEqual(left.transitionMatrix, right.transitionMatrix)
+  );
 }

@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_HMM_CONFIGURATION, REGIME_ORDER } from "./defaults";
+import { DEFAULT_HMM_CONFIGURATION } from "./defaults";
 import {
+  hmmConfigurationsEqual,
   portfolioRegimeMoments,
+  REGIME_ORDER,
   updateTransitionProbability,
 } from "./regimes";
 
@@ -39,5 +41,37 @@ describe("regime configuration helpers", () => {
       Math.sqrt(0.5 ** 2 * 0.2 ** 2 + 0.5 ** 2 * 0.1 ** 2),
       12,
     );
+  });
+
+  it("compares the complete HMM configuration without duplicating field walks", () => {
+    const updatedTransition = updateTransitionProbability(
+      DEFAULT_HMM_CONFIGURATION,
+      "bear",
+      "bull",
+      0.2,
+    );
+    const updatedAssumptions = {
+      ...DEFAULT_HMM_CONFIGURATION,
+      regimes: {
+        ...DEFAULT_HMM_CONFIGURATION.regimes,
+        bull: {
+          ...DEFAULT_HMM_CONFIGURATION.regimes.bull,
+          correlation: 0.25,
+        },
+      },
+    };
+
+    expect(
+      hmmConfigurationsEqual(
+        DEFAULT_HMM_CONFIGURATION,
+        DEFAULT_HMM_CONFIGURATION,
+      ),
+    ).toBe(true);
+    expect(
+      hmmConfigurationsEqual(DEFAULT_HMM_CONFIGURATION, updatedTransition),
+    ).toBe(false);
+    expect(
+      hmmConfigurationsEqual(DEFAULT_HMM_CONFIGURATION, updatedAssumptions),
+    ).toBe(false);
   });
 });

@@ -1,5 +1,5 @@
 import type { SimulationInputs } from "../types/simulation";
-import { REGIME_ORDER } from "./defaults";
+import { transitionMatricesEqual } from "./regimes";
 
 export type ChangeKey =
   | "model"
@@ -15,19 +15,96 @@ export type ChangeKey =
   | "regimeTransition"
   | "targetValue";
 
-const CHANGE_LABELS: Record<ChangeKey, string> = {
-  model: "market model",
-  initialCapital: "starting capital",
-  monthlyContribution: "monthly contributions",
-  horizonYears: "investment horizon",
-  stockAllocation: "stock allocation",
-  returnAssumptions: "return assumptions",
-  volatilityAssumptions: "volatility assumptions",
-  correlation: "stock–bond correlation",
-  rebalanceFrequency: "rebalancing",
-  inflationRate: "inflation",
-  regimeTransition: "regime persistence",
-  targetValue: "financial target",
+interface ChangeDescriptor {
+  label: string;
+  headline: (before: SimulationInputs, after: SimulationInputs) => string;
+  reason: (before: SimulationInputs, after: SimulationInputs) => string;
+}
+
+const CHANGE_DESCRIPTORS: Record<ChangeKey, ChangeDescriptor> = {
+  model: {
+    label: "market model",
+    headline: (_before, after) =>
+      after.model === "hmm"
+        ? "Switching on regime changes"
+        : "Holding market assumptions constant",
+    reason: () =>
+      "The same shock streams now pass through a different market-state process, isolating the effect of regime switching.",
+  },
+  initialCapital: {
+    label: "starting capital",
+    headline: (before, after) =>
+      `${after.initialCapital > before.initialCapital ? "Increasing" : "Reducing"} starting capital`,
+    reason: () =>
+      "Starting capital compounds from day one, so it affects every future path.",
+  },
+  monthlyContribution: {
+    label: "monthly contributions",
+    headline: (before, after) =>
+      after.monthlyContribution > before.monthlyContribution
+        ? "Contributing more each month"
+        : "Contributing less each month",
+    reason: () =>
+      "Contributions add capital in every market path, while the cash-flow-neutral drawdown measure stays comparable.",
+  },
+  horizonYears: {
+    label: "investment horizon",
+    headline: (before, after) =>
+      `${after.horizonYears > before.horizonYears ? "Extending" : "Shortening"} the horizon to ${after.horizonYears} years`,
+    reason: () =>
+      "A different runway changes both the time available for compounding and the time exposed to uncertainty.",
+  },
+  stockAllocation: {
+    label: "stock allocation",
+    headline: (before, after) =>
+      `${after.stockAllocation > before.stockAllocation ? "Increasing" : "Reducing"} stocks from ${Math.round(before.stockAllocation * 100)}% to ${Math.round(after.stockAllocation * 100)}%`,
+    reason: allocationReason,
+  },
+  returnAssumptions: {
+    label: "return assumptions",
+    headline: () => "Changing the return assumptions",
+    reason: () =>
+      "Return assumptions shift compounding across the full range without changing the sampled shocks.",
+  },
+  volatilityAssumptions: {
+    label: "volatility assumptions",
+    headline: () => "Changing the volatility assumptions",
+    reason: () =>
+      "Volatility widens or narrows the range and changes the depth of adverse paths.",
+  },
+  correlation: {
+    label: "stock–bond correlation",
+    headline: (before, after) =>
+      `${after.correlation < before.correlation ? "Lowering" : "Raising"} stock–bond correlation`,
+    reason: (before, after) =>
+      after.correlation < before.correlation
+        ? "The assets offset one another more often when their shocks are less aligned."
+        : "More synchronized asset moves reduce the portfolio’s diversification cushion.",
+  },
+  rebalanceFrequency: {
+    label: "rebalancing",
+    headline: () => "Changing the rebalance schedule",
+    reason: () =>
+      "Rebalancing controls how far the portfolio can drift from its selected risk mix.",
+  },
+  inflationRate: {
+    label: "inflation",
+    headline: () => "Changing the inflation assumption",
+    reason: () =>
+      "Inflation changes purchasing power, not the nominal paths, so the real-value estimate moves independently.",
+  },
+  regimeTransition: {
+    label: "regime persistence",
+    headline: () => "Changing regime persistence",
+    reason: () =>
+      "Transition probabilities control how long favorable and adverse conditions tend to persist before the market changes state.",
+  },
+  targetValue: {
+    label: "financial target",
+    headline: () => "Moving the financial target",
+    reason: () =>
+      "The portfolio paths are unchanged; only the hurdle they must clear has moved.",
+  },
 };
 
 export function changedFields(
@@ -73,12 +150,9 @@ export function changedFields(
     changes.push("inflationRate");
   }
   if (
-    REGIME_ORDER.some((regime) =>
-      REGIME_ORDER.some(
-        (nextRegime) =>
-          before.hmm.transitionMatrix[regime][nextRegime] !==
-          after.hmm.transitionMatrix[regime][nextRegime],
-      ),
+    !transitionMatricesEqual(
+      before.hmm.transitionMatrix,
+      after.hmm.transitionMatrix,
     )
   ) {
     changes.push("regimeTransition");
@@ -96,42 +170,15 @@ export function primaryChange(
   changes: ChangeKey[],
 ): string {
   if (changes.length > 1) {
-    return `Changing ${formatList(changes.map((change) => CHANGE_LABELS[change]))}`;
+    return `Changing ${formatList(
+      changes.map((change) => CHANGE_DESCRIPTORS[change].label),
+    )}`;
   }
   if (changes.length === 0) {
     return "Refreshing this scenario";
   }
 
-  switch (changes[0]) {
-    case "model":
-      return after.model === "hmm"
-        ? "Switching on regime changes"
-        : "Holding market assumptions constant";
-    case "initialCapital":
-      return `${after.initialCapital > before.initialCapital ? "Increasing" : "Reducing"} starting capital`;
-    case "monthlyContribution":
-      return after.monthlyContribution > before.monthlyContribution
-        ? "Contributing more each month"
-        : "Contributing less each month";
-    case "horizonYears":
-      return `${after.horizonYears > before.horizonYears ? "Extending" : "Shortening"} the horizon to ${after.horizonYears} years`;
-    case "stockAllocation":
-      return `${after.stockAllocation > before.stockAllocation ? "Increasing" : "Reducing"} stocks from ${Math.round(before.stockAllocation * 100)}% to ${Math.round(after.stockAllocation * 100)}%`;
-    case "returnAssumptions":
-      return "Changing the return assumptions";
-    case "volatilityAssumptions":
-      return "Changing the volatility assumptions";
-    case "correlation":
-      return `${after.correlation < before.correlation ? "Lowering" : "Raising"} stock–bond correlation`;
-    case "rebalanceFrequency":
-      return "Changing the rebalance schedule";
-    case "inflationRate":
-      return "Changing the inflation assumption";
-    case "regimeTransition":
-      return "Changing regime persistence";
-    case "targetValue":
-      return "Moving the financial target";
-  }
+  return CHANGE_DESCRIPTORS[changes[0]].headline(before, after);
 }
 
 export function reasonForChange(
@@ -145,34 +192,7 @@ export function reasonForChange(
       : "These assumptions interact across all 1,000 paths, so read the median, target likelihood, and drawdown change together.";
   }
 
-  switch (changes[0]) {
-    case "model":
-      return "The same shock streams now pass through a different market-state process, isolating the effect of regime switching.";
-    case "initialCapital":
-      return "Starting capital compounds from day one, so it affects every future path.";
-    case "monthlyContribution":
-      return "Contributions add capital in every market path, while the cash-flow-neutral drawdown measure stays comparable.";
-    case "horizonYears":
-      return "A different runway changes both the time available for compounding and the time exposed to uncertainty.";
-    case "stockAllocation":
-      return allocationReason(before, after);
-    case "returnAssumptions":
-      return "Return assumptions shift compounding across the full range without changing the sampled shocks.";
-    case "volatilityAssumptions":
-      return "Volatility widens or narrows the range and changes the depth of adverse paths.";
-    case "correlation":
-      return after.correlation < before.correlation
-        ? "The assets offset one another more often when their shocks are less aligned."
-        : "More synchronized asset moves reduce the portfolio’s diversification cushion.";
-    case "rebalanceFrequency":
-      return "Rebalancing controls how far the portfolio can drift from its selected risk mix.";
-    case "inflationRate":
-      return "Inflation changes purchasing power, not the nominal paths, so the real-value estimate moves independently.";
-    case "regimeTransition":
-      return "Transition probabilities control how long favorable and adverse conditions tend to persist before the market changes state.";
-    case "targetValue":
-      return "The portfolio paths are unchanged; only the hurdle they must clear has moved.";
-  }
+  return CHANGE_DESCRIPTORS[changes[0]].reason(before, after);
 }
 
 function allocationReason(

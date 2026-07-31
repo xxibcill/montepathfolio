@@ -2,6 +2,7 @@ import {
   formatCompactCurrency,
   formatPercent,
 } from "../lib/format";
+import { comparisonDirection } from "../lib/model-comparison";
 import type {
   SimulationMetrics,
   SimulationModel,
@@ -19,13 +20,16 @@ interface ComparisonRow {
   delta: (
     hmm: SimulationMetrics,
     constant: SimulationMetrics,
-  ) => string;
+  ) => number | null;
+  formatDelta: (value: number | null) => string;
   lowerIsBetter?: boolean;
 }
 
 function signedPoints(value: number): string {
   const points = value * 100;
-  return `${points > 0 ? "+" : ""}${points.toFixed(1)} pts`;
+  const roundedPoints = Number(points.toFixed(1));
+  const sign = roundedPoints > 0 ? "+" : roundedPoints < 0 ? "−" : "";
+  return `${sign}${Math.abs(roundedPoints).toFixed(1)} pts`;
 }
 
 function signedCurrency(value: number): string {
@@ -35,7 +39,9 @@ function signedCurrency(value: number): string {
 
 function signedMonths(value: number | null): string {
   if (value === null) return "—";
-  return `${value > 0 ? "+" : ""}${Math.round(value)} mo`;
+  const roundedMonths = Math.round(value);
+  const sign = roundedMonths > 0 ? "+" : roundedMonths < 0 ? "−" : "";
+  return `${sign}${Math.abs(roundedMonths)} mo`;
 }
 
 const rows: ComparisonRow[] = [
@@ -44,21 +50,24 @@ const rows: ComparisonRow[] = [
     note: "Share of paths reaching the nominal target",
     format: (metrics) => formatPercent(metrics.probabilityOfTarget, 1),
     delta: (hmm, constant) =>
-      signedPoints(hmm.probabilityOfTarget - constant.probabilityOfTarget),
+      hmm.probabilityOfTarget - constant.probabilityOfTarget,
+    formatDelta: (value) => signedPoints(value ?? 0),
   },
   {
     label: "Median ending value",
     note: "Middle ending value across 1,000 paths",
     format: (metrics) => formatCompactCurrency(metrics.medianTerminalValue),
     delta: (hmm, constant) =>
-      signedCurrency(hmm.medianTerminalValue - constant.medianTerminalValue),
+      hmm.medianTerminalValue - constant.medianTerminalValue,
+    formatDelta: (value) => signedCurrency(value ?? 0),
   },
   {
     label: "Maximum drawdown",
     note: "Median of each path’s deepest peak-to-trough fall",
     format: (metrics) => formatPercent(metrics.medianMaxDrawdown, 1),
     delta: (hmm, constant) =>
-      signedPoints(hmm.medianMaxDrawdown - constant.medianMaxDrawdown),
+      hmm.medianMaxDrawdown - constant.medianMaxDrawdown,
+    formatDelta: (value) => signedPoints(value ?? 0),
     lowerIsBetter: true,
   },
   {
@@ -66,7 +75,8 @@ const rows: ComparisonRow[] = [
     note: "Average loss versus contributions in the worst 5% of endings",
     format: (metrics) => formatPercent(metrics.expectedShortfall, 1),
     delta: (hmm, constant) =>
-      signedPoints(hmm.expectedShortfall - constant.expectedShortfall),
+      hmm.expectedShortfall - constant.expectedShortfall,
+    formatDelta: (value) => signedPoints(value ?? 0),
     lowerIsBetter: true,
   },
   {
@@ -77,23 +87,20 @@ const rows: ComparisonRow[] = [
         ? "—"
         : `${Math.round(metrics.averageRecoveryMonths)} mo`,
     delta: (hmm, constant) =>
-      signedMonths(
-        hmm.averageRecoveryMonths === null ||
-          constant.averageRecoveryMonths === null
-          ? null
-          : hmm.averageRecoveryMonths - constant.averageRecoveryMonths,
-      ),
+      hmm.averageRecoveryMonths === null ||
+      constant.averageRecoveryMonths === null
+        ? null
+        : hmm.averageRecoveryMonths - constant.averageRecoveryMonths,
+    formatDelta: signedMonths,
     lowerIsBetter: true,
   },
   {
     label: "Target shortfall",
-    note: "Accumulation-plan failure; retirement withdrawals are not modeled",
-    format: (metrics) => formatPercent(1 - metrics.probabilityOfTarget, 1),
+    note: "Average percentage gap among paths that finish below the target",
+    format: (metrics) => formatPercent(metrics.averageTargetShortfall, 1),
     delta: (hmm, constant) =>
-      signedPoints(
-        (1 - hmm.probabilityOfTarget) -
-          (1 - constant.probabilityOfTarget),
-      ),
+      hmm.averageTargetShortfall - constant.averageTargetShortfall,
+    formatDelta: (value) => signedPoints(value ?? 0),
     lowerIsBetter: true,
   },
 ];
@@ -154,19 +161,12 @@ export function ModelComparison({ result }: ModelComparisonProps) {
                   <td>{row.format(constant)}</td>
                   <td>{row.format(hmm)}</td>
                   <td
-                    data-direction={
-                      deltaValue.startsWith("+")
-                        ? row.lowerIsBetter
-                          ? "adverse"
-                          : "favorable"
-                        : deltaValue.startsWith("−")
-                          ? row.lowerIsBetter
-                            ? "favorable"
-                            : "adverse"
-                          : "neutral"
-                    }
+                    data-direction={comparisonDirection(
+                      deltaValue,
+                      row.lowerIsBetter,
+                    )}
                   >
-                    {deltaValue}
+                    {row.formatDelta(deltaValue)}
                   </td>
                 </tr>
               );

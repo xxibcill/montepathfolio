@@ -12,7 +12,7 @@ This project describes uncertainty; it does not predict markets.
 - Switch between Standard Monte Carlo and HMM Monte Carlo while retaining a side-by-side comparison.
 - Inspect current bull, bear, and sideways probabilities and portfolio-level regime moments.
 - Edit a row-normalized monthly transition matrix heatmap.
-- Inspect an illustrative regime timeline and six representative simulated regime paths.
+- Inspect an illustrative regime timeline and follow six numbered portfolio paths through their matching simulated regime strips.
 - Inspect a Canvas-rendered path chart with sampled paths, a median, 10th–90th and 5th–95th percentile bands, and the target.
 - Explore a terminal-value histogram and drawdown chart.
 - Review target probability, median ending value, inflation-adjusted median value, probability of ending below total contributions, median maximum drawdown, probability of a drawdown over 30%, average recovery time, and expected shortfall.
@@ -98,6 +98,8 @@ The bundled [`src/data/hmm-model.json`](src/data/hmm-model.json) is an illustrat
 - Current-state probabilities
 - Optional historical timeline observations
 
+The complete payload type lives in [`src/types/hmm-model.ts`](src/types/hmm-model.ts), and [`src/lib/hmm-model.ts`](src/lib/hmm-model.ts) validates service data at runtime before adapting it to the simulator. State arrays may arrive in any order: transition-matrix rows and columns follow the payload’s state-array order and are mapped to regimes by label.
+
 A production Python service can train a three-state Gaussian HMM from weekly log returns and realized volatility, label the otherwise arbitrary state IDs by their learned return/volatility statistics, and export the same JSON shape.
 
 Every UI run uses 1,000 paths. Gaussian asset shocks and HMM regime transitions use separate deterministic seeded streams. Standard and HMM paths share the same asset shocks, and corresponding paths keep the same shock prefix when the horizon changes, which makes model and scenario comparisons easier to interpret. The charts calculate monthly 5th, 10th, 50th, 90th, and 95th percentiles; up to 160 representative paths are retained for rendering.
@@ -113,7 +115,7 @@ Drawdown is measured on a parallel cash-flow-neutral portfolio index using the s
 - Contributions are non-negative and arrive monthly. The target and charted portfolio paths are nominal; inflation is used only to report the median ending value in today’s dollars.
 - “Chance of a loss” means ending below total capital contributed, not necessarily below the initial balance.
 - “Expected shortfall” means the average percentage loss versus contributed capital among the lowest 5% of terminal values; it is not a forecast of a specific loss.
-- “Target shortfall” is an accumulation-plan failure proxy. Retirement withdrawals and retirement-failure modeling are not included.
+- “Target shortfall” means the average percentage gap versus the target among paths that finish below it. It describes accumulation outcomes; retirement withdrawals and retirement-failure modeling are not included.
 - Average recovery time includes completed drawdown episodes; the interface reports separately how many paths remain below a prior peak at the horizon.
 - Results depend on user-supplied assumptions and a finite simulated sample. They are educational illustrations, not forecasts, investment recommendations, or financial advice.
 
@@ -148,10 +150,11 @@ src/
 ├── lib/
 │   ├── defaults.ts          Default scenario and local-storage loading
 │   ├── format.ts            Display formatting
+│   ├── hmm-model.ts         Training-service payload validation and adaptation
 │   ├── regimes.ts           Transition editing and regime portfolio moments
 │   ├── simulation.ts        Monte Carlo engine and metrics
 │   └── simulation.test.ts   Determinism, GBM, percentile, and risk tests
-├── types/                   Simulation types
+├── types/                   Simulation and HMM service-contract types
 ├── workers/                 Simulation Web Worker entry point
 ├── App.tsx                  Application layout and scenario comparison flow
 ├── main.tsx                 React entry point

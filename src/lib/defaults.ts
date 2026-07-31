@@ -4,48 +4,15 @@ import type {
   Regime,
   SimulationInputs,
 } from "../types/simulation";
+import {
+  createHMMConfiguration,
+  parseHMMModelPayload,
+} from "./hmm-model";
+import { REGIME_ORDER } from "./regimes";
 
-export const REGIME_ORDER = ["bull", "bear", "sideways"] as const;
-
-function loadDefaultHMMConfiguration(): HMMConfiguration {
-  const regimes = Object.fromEntries(
-    hmmModel.states.map((state) => [
-      state.label,
-      {
-        stocks: {
-          expectedReturn: state.stocks.annualReturn,
-          volatility: state.stocks.annualVolatility,
-        },
-        bonds: {
-          expectedReturn: state.bonds.annualReturn,
-          volatility: state.bonds.annualVolatility,
-        },
-        correlation: state.correlation,
-      },
-    ]),
-  ) as HMMConfiguration["regimes"];
-  const transitionMatrix = Object.fromEntries(
-    REGIME_ORDER.map((fromRegime, rowIndex) => [
-      fromRegime,
-      Object.fromEntries(
-        REGIME_ORDER.map((toRegime, columnIndex) => [
-          toRegime,
-          hmmModel.transitionMatrix[rowIndex][columnIndex],
-        ]),
-      ),
-    ]),
-  ) as HMMConfiguration["transitionMatrix"];
-  const currentStateProbabilities = Object.fromEntries(
-    REGIME_ORDER.map((regime, index) => [
-      regime,
-      hmmModel.currentStateProbabilities[index],
-    ]),
-  ) as HMMConfiguration["currentStateProbabilities"];
-
-  return { regimes, transitionMatrix, currentStateProbabilities };
-}
-
-export const DEFAULT_HMM_CONFIGURATION = loadDefaultHMMConfiguration();
+export const DEFAULT_HMM_MODEL = parseHMMModelPayload(hmmModel);
+export const DEFAULT_HMM_CONFIGURATION =
+  createHMMConfiguration(DEFAULT_HMM_MODEL);
 
 export const DEFAULT_INPUTS: SimulationInputs = {
   initialCapital: 50_000,
@@ -107,6 +74,7 @@ export function loadStoredInputs(): SimulationInputs {
     return {
       ...DEFAULT_INPUTS,
       ...parsed,
+      model: parsed.model ?? "constant",
       stocks: { ...DEFAULT_INPUTS.stocks, ...parsed.stocks },
       bonds: { ...DEFAULT_INPUTS.bonds, ...parsed.bonds },
       hmm: {

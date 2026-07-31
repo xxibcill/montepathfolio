@@ -113,6 +113,22 @@ describe("runSimulation", () => {
     );
   });
 
+  it("reports the average percentage gap among paths that miss the target", () => {
+    const result = runSimulation({
+      ...BASE_INPUTS,
+      initialCapital: 100,
+      monthlyContribution: 0,
+      horizonYears: 1,
+      stocks: { expectedReturn: 0, volatility: 0 },
+      bonds: { expectedReturn: 0, volatility: 0 },
+      targetValue: 200,
+      pathCount: 10,
+    });
+
+    expect(result.metrics.probabilityOfTarget).toBe(0);
+    expect(result.metrics.averageTargetShortfall).toBeCloseTo(0.5, 12);
+  });
+
   it("rejects transition rows that do not sum to one", () => {
     expect(() =>
       runSimulation({

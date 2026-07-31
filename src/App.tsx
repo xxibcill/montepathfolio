@@ -14,9 +14,9 @@ import { ScenarioControls } from "./components/ScenarioControls";
 import {
   DEFAULT_INPUTS,
   loadStoredInputs,
-  REGIME_ORDER,
   STORAGE_KEY,
 } from "./lib/defaults";
+import { hmmConfigurationsEqual } from "./lib/regimes";
 import { useSimulation } from "./hooks/useSimulation";
 import type { SimulationInputs } from "./types/simulation";
 
@@ -35,26 +35,7 @@ function inputsMatch(a: SimulationInputs, b: SimulationInputs): boolean {
     a.rebalanceFrequency === b.rebalanceFrequency &&
     a.inflationRate === b.inflationRate &&
     a.targetValue === b.targetValue &&
-    REGIME_ORDER.every(
-      (regime) =>
-        a.hmm.regimes[regime].stocks.expectedReturn ===
-          b.hmm.regimes[regime].stocks.expectedReturn &&
-        a.hmm.regimes[regime].stocks.volatility ===
-          b.hmm.regimes[regime].stocks.volatility &&
-        a.hmm.regimes[regime].bonds.expectedReturn ===
-          b.hmm.regimes[regime].bonds.expectedReturn &&
-        a.hmm.regimes[regime].bonds.volatility ===
-          b.hmm.regimes[regime].bonds.volatility &&
-        a.hmm.regimes[regime].correlation ===
-          b.hmm.regimes[regime].correlation &&
-        a.hmm.currentStateProbabilities[regime] ===
-          b.hmm.currentStateProbabilities[regime] &&
-        REGIME_ORDER.every(
-          (nextRegime) =>
-            a.hmm.transitionMatrix[regime][nextRegime] ===
-            b.hmm.transitionMatrix[regime][nextRegime],
-        ),
-    )
+    hmmConfigurationsEqual(a.hmm, b.hmm)
   );
 }
 

@@ -1,8 +1,8 @@
-import { REGIME_ORDER } from "../lib/defaults";
 import {
   portfolioRegimeMoments,
   REGIME_DESCRIPTIONS,
   REGIME_LABELS,
+  REGIME_ORDER,
 } from "../lib/regimes";
 import type { SimulationResult } from "../types/simulation";
 

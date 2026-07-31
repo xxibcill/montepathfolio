@@ -1,14 +1,14 @@
 import type {
   PercentileSeries,
   Regime,
-  RegimeAssumptions,
+  MarketAssumptions,
   RegimeProbabilities,
   SimulationModel,
   SimulationInputs,
   SimulationMetrics,
   SimulationResult,
 } from "../types/simulation";
-import { REGIME_ORDER } from "./defaults";
+import { REGIME_ORDER } from "./regimes";
 
 const DEFAULT_PATH_COUNT = 1_000;
 const MAX_SAMPLE_PATHS = 160;
@@ -92,11 +92,12 @@ function simulatePaths(
   monthCount: number,
   modelType: SimulationModel,
 ): PathAnalysis[] {
-  const constantModel = createMonthlyModel({
+  const constantAssumptions: MarketAssumptions = {
     stocks: inputs.stocks,
     bonds: inputs.bonds,
     correlation: inputs.correlation,
-  });
+  };
+  const constantModel = createMonthlyModel(constantAssumptions);
   const regimeModels = Object.fromEntries(
     REGIME_ORDER.map((regime) => [
       regime,
@@ -199,7 +200,7 @@ function simulatePath(
   return { values, regimes, ...analyzeDrawdowns(navValues) };
 }
 
-function createMonthlyModel(assumptions: RegimeAssumptions): MonthlyModel {
+function createMonthlyModel(assumptions: MarketAssumptions): MonthlyModel {
   const stockVariance = assumptions.stocks.volatility ** 2;
   const bondVariance = assumptions.bonds.volatility ** 2;
 
@@ -404,6 +405,12 @@ function buildMetrics(
           : Math.max(0, 1 - value / totalContributed),
       ),
   );
+  const targetShortfalls =
+    inputs.targetValue === 0
+      ? []
+      : terminalValues
+          .filter((value) => value < inputs.targetValue)
+          .map((value) => 1 - value / inputs.targetValue);
 
   return {
     medianTerminalValue,
@@ -427,6 +434,8 @@ function buildMetrics(
     averageRecoveryMonths:
       recoveryMonths.length === 0 ? null : mean(recoveryMonths),
     expectedShortfall,
+    averageTargetShortfall:
+      targetShortfalls.length === 0 ? 0 : mean(targetShortfalls),
     totalContributed,
   };
 }

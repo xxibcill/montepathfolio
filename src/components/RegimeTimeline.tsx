@@ -1,4 +1,4 @@
-import hmmModel from "../data/hmm-model.json";
+import { DEFAULT_HMM_MODEL } from "../lib/defaults";
 import { REGIME_LABELS } from "../lib/regimes";
 import type { Regime } from "../types/simulation";
 
@@ -6,16 +6,18 @@ const WIDTH = 960;
 const HEIGHT = 270;
 const PLOT_TOP = 24;
 const PLOT_BOTTOM = 218;
+const history = DEFAULT_HMM_MODEL.history ?? [];
 
 function buildPricePath(): string {
-  const prices = hmmModel.history.map((observation) => observation.normalizedPrice);
+  const prices = history.map((observation) => observation.normalizedPrice);
+  if (prices.length === 0) return "";
   const minimum = Math.min(...prices);
   const maximum = Math.max(...prices);
   const range = Math.max(1, maximum - minimum);
 
-  return hmmModel.history
+  return history
     .map((observation, index) => {
-      const x = (index / (hmmModel.history.length - 1)) * WIDTH;
+      const x = (index / Math.max(1, history.length - 1)) * WIDTH;
       const y =
         PLOT_BOTTOM -
         ((observation.normalizedPrice - minimum) / range) *
@@ -29,8 +31,8 @@ function buildPricePath(): string {
 function buildSegments() {
   const segments: Array<{ start: number; end: number; state: Regime }> = [];
 
-  for (const [index, observation] of hmmModel.history.entries()) {
-    const state = observation.state as Regime;
+  for (const [index, observation] of history.entries()) {
+    const state: Regime = observation.state;
     const previous = segments.at(-1);
     if (previous?.state === state) {
       previous.end = index;
@@ -42,14 +44,14 @@ function buildSegments() {
   return segments;
 }
 
-const timelineTicks = hmmModel.history
+const timelineTicks = history
   .map((observation, index) => ({ ...observation, index }))
   .filter((observation) => observation.date.endsWith("-01"));
 
 export function RegimeTimeline() {
   const pricePath = buildPricePath();
   const segments = buildSegments();
-  const stepWidth = WIDTH / Math.max(1, hmmModel.history.length - 1);
+  const stepWidth = WIDTH / Math.max(1, history.length - 1);
 
   return (
     <section className="regime-timeline" aria-labelledby="regime-timeline-title">
@@ -106,7 +108,7 @@ export function RegimeTimeline() {
           ))}
           <path className="regime-timeline__price" d={pricePath} />
           {timelineTicks.map((tick) => {
-            const x = (tick.index / (hmmModel.history.length - 1)) * WIDTH;
+            const x = (tick.index / Math.max(1, history.length - 1)) * WIDTH;
             return (
               <g key={tick.date}>
                 <line

@@ -7,7 +7,7 @@ export interface AssetAssumptions {
   volatility: number;
 }
 
-export interface RegimeAssumptions {
+export interface MarketAssumptions {
   stocks: AssetAssumptions;
   bonds: AssetAssumptions;
   correlation: number;
@@ -17,7 +17,7 @@ export type RegimeProbabilities = Record<Regime, number>;
 export type TransitionMatrix = Record<Regime, RegimeProbabilities>;
 
 export interface HMMConfiguration {
-  regimes: Record<Regime, RegimeAssumptions>;
+  regimes: Record<Regime, MarketAssumptions>;
   transitionMatrix: TransitionMatrix;
   currentStateProbabilities: RegimeProbabilities;
 }
@@ -63,6 +63,11 @@ export interface SimulationMetrics {
    * A value of zero means even the tail sample finished above contributions.
    */
   expectedShortfall: number;
+  /**
+   * Mean percentage gap versus the target among paths that finish below it.
+   * A value of zero means every path reaches the target or the target is zero.
+   */
+  averageTargetShortfall: number;
   totalContributed: number;
 }
 
