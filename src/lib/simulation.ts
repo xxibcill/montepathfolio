@@ -1,72 +1,49 @@
 import type {
   PercentileSeries,
-  Regime,
-  MarketAssumptions,
   RegimeProbabilities,
-  SimulationModel,
   SimulationCaseResult,
   SimulationInputs,
   SimulationMetrics,
+  SimulationModel,
   SimulationResult,
 } from "../types/simulation";
 import {
-  createPortfolioRandomSource,
-  type PortfolioRandomSource,
-} from "./portfolio-lab/semantic-random";
+  PORTFOLIO_LAB_CONTRACT,
+  PORTFOLIO_LAB_MODEL_CONTRACT,
+  asPortfolioCaseId,
+  type MarketCase,
+  type PortfolioCaseDetail,
+  type PortfolioLabRequest,
+  type PortfolioMetrics,
+} from "./portfolio-lab/contracts";
+import {
+  executeValidatedPortfolioLabRequest,
+  executeValidatedPortfolioLabRequestCooperatively,
+  selectPortfolioLabSampleIndexes,
+} from "./portfolio-lab/engine";
+import { preflightPortfolioLabRequest } from "./portfolio-lab/in-process-runner";
 import { REGIME_ORDER } from "./regimes";
 
+export {
+  PortfolioLabEngineCancelledError as SimulationCancelledError,
+  sampleRegime,
+} from "./portfolio-lab/engine";
+
 const DEFAULT_PATH_COUNT = 1_000;
-const MAX_SAMPLE_PATHS = 160;
 const MONTHS_PER_YEAR = 12;
-const THIRTY_PERCENT_DRAWDOWN = 0.3;
-const COOPERATIVE_PATH_BATCH_SIZE = 16;
-
-interface MonthlyModel {
-  stockDrift: number;
-  stockDiffusion: number;
-  bondDrift: number;
-  bondDiffusion: number;
-  correlation: number;
-  independentBondWeight: number;
-}
-
-interface PathAnalysis {
-  values: number[];
-  drawdowns: number[];
-  maxDrawdown: number;
-  recoveryMonths: number[];
-  hasUnrecoveredDrawdown: boolean;
-  regimes: Regime[];
-}
-
-interface MetricSources {
-  terminalValues: number[];
-  maxDrawdowns: number[];
-  recoveryMonths: number[];
-  unrecoveredDrawdownCount: number;
-}
+const LEGACY_GBM_CASE_ID = asPortfolioCaseId("legacy/gbm");
+const LEGACY_HMM_CASE_ID = asPortfolioCaseId("legacy/hmm");
 
 export function runSimulation(rawInputs: SimulationInputs): SimulationResult {
   const { inputs, monthCount } = prepareSimulation(rawInputs);
-  // Both models address identical diffusion shocks. Regime draws use distinct
-  // semantic addresses so comparison deltas reflect the model, not draw order.
-  const pathsByModel: Record<SimulationModel, PathAnalysis[]> = {
-    constant: simulatePaths(inputs, monthCount, "constant"),
-    hmm: simulatePaths(inputs, monthCount, "hmm"),
-  };
-  const selectedResult = buildSimulationCaseResult(
-    inputs,
-    monthCount,
-    pathsByModel[inputs.model],
-  );
-  const comparisonMetrics = {
-    constant: buildMetricsFromPaths(
-      inputs,
-      monthCount,
-      pathsByModel.constant,
-    ),
-    hmm: buildMetricsFromPaths(inputs, monthCount, pathsByModel.hmm),
-  };
+  const request = buildPortfolioLabRequest(inputs, monthCount, [
+    "constant",
+    "hmm",
+  ]);
+  assertPortfolioLabRequestExecutable(request);
+  const result = executeValidatedPortfolioLabRequest(request);
+  const selectedResult = toSimulationCaseResult(result.primary);
+  const comparisonMetrics = toLegacyComparisonMetrics(result);
 
   return {
     ...selectedResult,
@@ -79,29 +56,37 @@ export function runSimulation(rawInputs: SimulationInputs): SimulationResult {
 
 export const simulatePortfolio = runSimulation;
 
-export class SimulationCancelledError extends Error {
-  constructor() {
-    super("Simulation was cancelled.");
-    this.name = "SimulationCancelledError";
-  }
-}
-
 export async function runSimulationCase(
   rawInputs: SimulationInputs,
   signal: AbortSignal,
 ): Promise<SimulationCaseResult> {
   const { inputs, monthCount } = prepareSimulation(rawInputs);
-  const paths = await simulatePathsCooperatively(
-    inputs,
-    monthCount,
-    inputs.model,
+  const request = buildPortfolioLabRequest(inputs, monthCount, [inputs.model]);
+  assertPortfolioLabRequestExecutable(request);
+  const result = await executeValidatedPortfolioLabRequestCooperatively(
+    request,
     signal,
   );
 
-  return buildSimulationCaseResult(inputs, monthCount, paths);
+  return toSimulationCaseResult(result.primary);
 }
 
-function prepareSimulation(rawInputs: SimulationInputs) {
+export const selectSimulationSampleIndexes =
+  selectPortfolioLabSampleIndexes;
+
+function assertPortfolioLabRequestExecutable(
+  request: PortfolioLabRequest,
+): void {
+  const problem = preflightPortfolioLabRequest(request);
+  if (problem) {
+    throw new Error(`${problem.code}: ${problem.message}`);
+  }
+}
+
+function prepareSimulation(rawInputs: SimulationInputs): {
+  readonly inputs: SimulationInputs;
+  readonly monthCount: number;
+} {
   const inputs = normalizeInputs(rawInputs);
   return {
     inputs,
@@ -109,469 +94,193 @@ function prepareSimulation(rawInputs: SimulationInputs) {
   };
 }
 
-function buildSimulationCaseResult(
+function buildPortfolioLabRequest(
   inputs: SimulationInputs,
   monthCount: number,
-  paths: PathAnalysis[],
-): SimulationCaseResult {
-  const pathValues = paths.map((path) => path.values);
-  const drawdownValues = paths.map((path) => path.drawdowns);
-  const sampleIndexes = selectSimulationSampleIndexes(paths.length);
+  requestedModels: readonly SimulationModel[],
+): PortfolioLabRequest {
+  const cases = requestedModels.map((model) =>
+    model === "constant" ? buildGbmCase(inputs) : buildHmmCase(inputs),
+  );
 
   return {
-    samplePaths: sampleIndexes.map((index) => pathValues[index]),
-    sampleDrawdownPaths: sampleIndexes.map((index) => drawdownValues[index]),
-    pathPercentiles: buildPercentileSeries(pathValues, monthCount + 1),
-    drawdownPercentiles: buildPercentileSeries(drawdownValues, monthCount + 1),
-    terminalValues: paths.map((path) => path.values[monthCount]),
-    maxDrawdowns: paths.map((path) => path.maxDrawdown),
+    contract: PORTFOLIO_LAB_CONTRACT.request,
+    plan: {
+      initialCapital: inputs.initialCapital,
+      contributionPerStep: inputs.monthlyContribution,
+      targetWeights: {
+        stocks: inputs.stockAllocation,
+        bonds: 1 - inputs.stockAllocation,
+      },
+      rebalance: toPortfolioLabRebalance(inputs.rebalanceFrequency),
+      annualInflationRate: inputs.inflationRate,
+      targetValue: inputs.targetValue,
+    },
+    primaryCaseId:
+      inputs.model === "constant"
+        ? LEGACY_GBM_CASE_ID
+        : LEGACY_HMM_CASE_ID,
+    cases,
+    execution: {
+      seed: inputs.seed,
+      paths: inputs.pathCount,
+      steps: monthCount,
+      stepYears: 1 / MONTHS_PER_YEAR,
+    },
+  };
+}
+
+function buildGbmCase(inputs: SimulationInputs): MarketCase {
+  return {
+    id: LEGACY_GBM_CASE_ID,
+    label: "Standard Monte Carlo",
+    model: {
+      contract: PORTFOLIO_LAB_MODEL_CONTRACT.gbm,
+      kind: "gbm",
+      market: {
+        stocks: {
+          annualDrift: inputs.stocks.expectedReturn,
+          annualVolatility: inputs.stocks.volatility,
+        },
+        bonds: {
+          annualDrift: inputs.bonds.expectedReturn,
+          annualVolatility: inputs.bonds.volatility,
+        },
+        correlation: inputs.correlation,
+      },
+    },
+  };
+}
+
+function buildHmmCase(inputs: SimulationInputs): MarketCase {
+  return {
+    id: LEGACY_HMM_CASE_ID,
+    label: "Regime switching",
+    model: {
+      contract: PORTFOLIO_LAB_MODEL_CONTRACT.hmm,
+      kind: "hmm",
+      regimes: Object.fromEntries(
+        REGIME_ORDER.map((regime) => {
+          const market = inputs.hmm.regimes[regime];
+          return [
+            regime,
+            {
+              stocks: {
+                annualDrift: market.stocks.expectedReturn,
+                annualVolatility: market.stocks.volatility,
+              },
+              bonds: {
+                annualDrift: market.bonds.expectedReturn,
+                annualVolatility: market.bonds.volatility,
+              },
+              correlation: market.correlation,
+            },
+          ];
+        }),
+      ) as Extract<MarketCase["model"], { kind: "hmm" }>["regimes"],
+      transitionMatrix: inputs.hmm.transitionMatrix,
+      initialStateProbabilities: inputs.hmm.currentStateProbabilities,
+    },
+  };
+}
+
+function toPortfolioLabRebalance(
+  frequency: SimulationInputs["rebalanceFrequency"],
+): PortfolioLabRequest["plan"]["rebalance"] {
+  if (frequency === "never") {
+    return { kind: "never" };
+  }
+
+  return {
+    kind: "periodic",
+    everySteps: frequency === "monthly" ? 1 : MONTHS_PER_YEAR,
+  };
+}
+
+function toSimulationCaseResult(
+  detail: PortfolioCaseDetail,
+): SimulationCaseResult {
+  const { distribution } = detail;
+
+  return {
+    samplePaths: detail.samples.map((sample) => [...sample.wealth.values]),
+    sampleDrawdownPaths: detail.samples.map((sample) => [
+      ...sample.drawdown.values,
+    ]),
+    pathPercentiles: toLegacyPercentiles(
+      distribution.wealthPercentiles,
+    ),
+    drawdownPercentiles: toLegacyPercentiles(
+      distribution.drawdownPercentiles,
+    ),
+    terminalValues: [...distribution.terminalWealth.values],
+    maxDrawdowns: [...distribution.maximumDrawdowns.values],
     sampleRegimePaths:
-      inputs.model === "hmm"
-        ? sampleIndexes.map((index) => paths[index].regimes)
+      detail.model === "hmm"
+        ? detail.diagnostics.sampledStatePaths.map((path) => [
+            ...path.states,
+          ])
         : [],
     regimeOccupancy:
-      inputs.model === "hmm" ? calculateRegimeOccupancy(paths) : null,
-    metrics: buildMetricsFromPaths(inputs, monthCount, paths),
+      detail.model === "hmm"
+        ? { ...detail.diagnostics.regimeOccupancy }
+        : null,
+    metrics: toLegacyMetrics(detail.metrics),
   };
 }
 
-function simulatePaths(
-  inputs: SimulationInputs,
-  monthCount: number,
-  modelType: SimulationModel,
-): PathAnalysis[] {
-  const context = createPathSimulationContext(inputs, monthCount, modelType);
-  return Array.from({ length: inputs.pathCount }, (_, pathIndex) =>
-    simulatePath(context, pathIndex),
-  );
-}
+function toLegacyComparisonMetrics(
+  result: ReturnType<typeof executeValidatedPortfolioLabRequest>,
+): Record<SimulationModel, SimulationMetrics> {
+  const metrics: Partial<Record<SimulationModel, SimulationMetrics>> = {};
 
-async function simulatePathsCooperatively(
-  inputs: SimulationInputs,
-  monthCount: number,
-  modelType: SimulationModel,
-  signal: AbortSignal,
-): Promise<PathAnalysis[]> {
-  const context = createPathSimulationContext(inputs, monthCount, modelType);
-  const paths: PathAnalysis[] = [];
-
-  await Promise.resolve();
-  throwIfCancelled(signal);
-
-  for (let pathIndex = 0; pathIndex < inputs.pathCount; pathIndex += 1) {
-    paths.push(simulatePath(context, pathIndex));
-
-    if ((pathIndex + 1) % COOPERATIVE_PATH_BATCH_SIZE === 0) {
-      await yieldToEventLoop();
-      throwIfCancelled(signal);
-    }
+  for (const summary of [result.primary, ...result.comparisons]) {
+    metrics[summary.model === "gbm" ? "constant" : "hmm"] =
+      toLegacyMetrics(summary.metrics);
   }
 
-  throwIfCancelled(signal);
-  return paths;
-}
-
-interface PathModels {
-  readonly constant: MonthlyModel;
-  readonly regimes: Record<Regime, MonthlyModel>;
-}
-
-interface PathSimulationContext {
-  readonly inputs: SimulationInputs;
-  readonly monthCount: number;
-  readonly modelType: SimulationModel;
-  readonly models: PathModels;
-  readonly randomSource: PortfolioRandomSource;
-}
-
-function createPathSimulationContext(
-  inputs: SimulationInputs,
-  monthCount: number,
-  modelType: SimulationModel,
-): PathSimulationContext {
-  return {
-    inputs,
-    monthCount,
-    modelType,
-    models: createPathModels(inputs),
-    randomSource: createPortfolioRandomSource(inputs.seed),
-  };
-}
-
-function createPathModels(inputs: SimulationInputs): PathModels {
-  const constantAssumptions: MarketAssumptions = {
-    stocks: inputs.stocks,
-    bonds: inputs.bonds,
-    correlation: inputs.correlation,
-  };
-  const constantModel = createMonthlyModel(constantAssumptions);
-  const regimeModels = Object.fromEntries(
-    REGIME_ORDER.map((regime) => [
-      regime,
-      createMonthlyModel(inputs.hmm.regimes[regime]),
-    ]),
-  ) as Record<Regime, MonthlyModel>;
-
-  return { constant: constantModel, regimes: regimeModels };
-}
-
-function throwIfCancelled(signal: AbortSignal): void {
-  if (signal.aborted) {
-    throw new SimulationCancelledError();
-  }
-}
-
-function yieldToEventLoop(): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, 0);
-  });
-}
-
-function simulatePath(
-  context: PathSimulationContext,
-  pathIndex: number,
-): PathAnalysis {
-  const { inputs, monthCount, modelType, models, randomSource } = context;
-  let stockValue = inputs.initialCapital * inputs.stockAllocation;
-  let bondValue = inputs.initialCapital - stockValue;
-  let navStockValue = inputs.stockAllocation;
-  let navBondValue = 1 - inputs.stockAllocation;
-  const values = [inputs.initialCapital];
-  const navValues = [1];
-  let regime =
-    modelType === "hmm"
-      ? sampleRegime(
-          inputs.hmm.currentStateProbabilities,
-          randomSource.uniformAt(pathIndex, 0, "regime/initial"),
-        )
-      : null;
-  const regimes: Regime[] = regime ? [regime] : [];
-
-  for (let month = 1; month <= monthCount; month += 1) {
-    if (regime) {
-      regime = sampleRegime(
-        inputs.hmm.transitionMatrix[regime],
-        randomSource.uniformAt(pathIndex, month, "regime/transition"),
-      );
-      regimes.push(regime);
-    }
-    const model = regime ? models.regimes[regime] : models.constant;
-    const stockShock = randomSource.normalAt(
-      pathIndex,
-      month,
-      "diffusion/stocks",
-    );
-    const bondShock =
-      model.correlation * stockShock +
-      model.independentBondWeight *
-        randomSource.normalAt(
-          pathIndex,
-          month,
-          "diffusion/bonds-independent",
-        );
-    const stockGrowth = Math.exp(
-      model.stockDrift + model.stockDiffusion * stockShock,
-    );
-    const bondGrowth = Math.exp(
-      model.bondDrift + model.bondDiffusion * bondShock,
-    );
-
-    stockValue *= stockGrowth;
-    bondValue *= bondGrowth;
-    navStockValue *= stockGrowth;
-    navBondValue *= bondGrowth;
-    stockValue += inputs.monthlyContribution * inputs.stockAllocation;
-    bondValue += inputs.monthlyContribution * (1 - inputs.stockAllocation);
-
-    if (shouldRebalance(inputs.rebalanceFrequency, month)) {
-      const rebalanced = rebalance(stockValue, bondValue, inputs.stockAllocation);
-      const rebalancedNav = rebalance(
-        navStockValue,
-        navBondValue,
-        inputs.stockAllocation,
-      );
-      stockValue = rebalanced.stockValue;
-      bondValue = rebalanced.bondValue;
-      navStockValue = rebalancedNav.stockValue;
-      navBondValue = rebalancedNav.bondValue;
-    }
-
-    const portfolioValue = stockValue + bondValue;
-    const navValue = navStockValue + navBondValue;
-    if (!Number.isFinite(portfolioValue) || !Number.isFinite(navValue)) {
-      throw new Error("Asset assumptions produced a non-finite portfolio value");
-    }
-    values.push(portfolioValue);
-    navValues.push(navValue);
-  }
-
-  return { values, regimes, ...analyzeDrawdowns(navValues) };
-}
-
-function createMonthlyModel(assumptions: MarketAssumptions): MonthlyModel {
-  const stockVariance = assumptions.stocks.volatility ** 2;
-  const bondVariance = assumptions.bonds.volatility ** 2;
-
-  return {
-    stockDrift:
-      (assumptions.stocks.expectedReturn - stockVariance / 2) /
-      MONTHS_PER_YEAR,
-    stockDiffusion:
-      assumptions.stocks.volatility / Math.sqrt(MONTHS_PER_YEAR),
-    bondDrift:
-      (assumptions.bonds.expectedReturn - bondVariance / 2) /
-      MONTHS_PER_YEAR,
-    bondDiffusion:
-      assumptions.bonds.volatility / Math.sqrt(MONTHS_PER_YEAR),
-    correlation: assumptions.correlation,
-    independentBondWeight: Math.sqrt(
-      Math.max(0, 1 - assumptions.correlation ** 2),
-    ),
-  };
-}
-
-export function sampleRegime(
-  probabilities: RegimeProbabilities,
-  randomValue: number,
-): Regime {
-  let cumulativeProbability = 0;
-
-  for (const regime of REGIME_ORDER) {
-    cumulativeProbability += probabilities[regime];
-    if (randomValue <= cumulativeProbability) {
-      return regime;
-    }
-  }
-
-  // Floating-point rounding can leave the cumulative value infinitesimally
-  // below one. The final state is the deterministic fallback.
-  return REGIME_ORDER.at(-1)!;
-}
-
-function shouldRebalance(
-  frequency: SimulationInputs["rebalanceFrequency"],
-  month: number,
-): boolean {
-  return (
-    frequency === "monthly" || (frequency === "annual" && month % 12 === 0)
-  );
-}
-
-function rebalance(
-  stockValue: number,
-  bondValue: number,
-  stockAllocation: number,
-): { stockValue: number; bondValue: number } {
-  const portfolioValue = stockValue + bondValue;
-
-  return {
-    stockValue: portfolioValue * stockAllocation,
-    bondValue: portfolioValue * (1 - stockAllocation),
-  };
-}
-
-function analyzeDrawdowns(
-  values: number[],
-): Omit<PathAnalysis, "values" | "regimes"> {
-  let peak = values[0];
-  let underwaterSince: number | null = null;
-  let maxDrawdown = 0;
-  const drawdowns = [0];
-  const recoveryMonths: number[] = [];
-
-  for (let month = 1; month < values.length; month += 1) {
-    const value = values[month];
-    if (value >= peak) {
-      if (underwaterSince !== null) {
-        recoveryMonths.push(month - underwaterSince);
-        underwaterSince = null;
-      }
-      peak = value;
-      drawdowns.push(0);
-      continue;
-    }
-
-    underwaterSince ??= month - 1;
-    const drawdown = peak === 0 ? 0 : Math.max(0, 1 - value / peak);
-    maxDrawdown = Math.max(maxDrawdown, drawdown);
-    drawdowns.push(drawdown);
+  if (!metrics.constant || !metrics.hmm) {
+    throw new Error("The legacy simulation requires GBM and HMM summaries.");
   }
 
   return {
-    drawdowns,
-    maxDrawdown,
-    recoveryMonths,
-    hasUnrecoveredDrawdown: underwaterSince !== null,
+    constant: metrics.constant,
+    hmm: metrics.hmm,
   };
 }
 
-function buildPercentileSeries(
-  paths: number[][],
-  pointCount: number,
-): PercentileSeries {
-  const series: PercentileSeries = {
-    p05: [],
-    p10: [],
-    p50: [],
-    p90: [],
-    p95: [],
-  };
-
-  for (let point = 0; point < pointCount; point += 1) {
-    const values = paths
-      .map((path) => path[point])
-      .sort((left, right) => left - right);
-    series.p05.push(percentile(values, 0.05));
-    series.p10.push(percentile(values, 0.1));
-    series.p50.push(percentile(values, 0.5));
-    series.p90.push(percentile(values, 0.9));
-    series.p95.push(percentile(values, 0.95));
-  }
-
-  return series;
-}
-
-export function selectSimulationSampleIndexes(pathCount: number): number[] {
-  if (pathCount <= MAX_SAMPLE_PATHS) {
-    return Array.from({ length: pathCount }, (_, index) => index);
-  }
-
-  return Array.from({ length: MAX_SAMPLE_PATHS }, (_, sampleIndex) => {
-    return Math.round(
-      (sampleIndex * (pathCount - 1)) / (MAX_SAMPLE_PATHS - 1),
-    );
-  });
-}
-
-function buildMetricsFromPaths(
-  inputs: SimulationInputs,
-  monthCount: number,
-  paths: PathAnalysis[],
-): SimulationMetrics {
-  return buildMetrics(inputs, monthCount, {
-    terminalValues: paths.map((path) => path.values[monthCount]),
-    maxDrawdowns: paths.map((path) => path.maxDrawdown),
-    recoveryMonths: paths.flatMap((path) => path.recoveryMonths),
-    unrecoveredDrawdownCount: paths.filter(
-      (path) => path.hasUnrecoveredDrawdown,
-    ).length,
-  });
-}
-
-function calculateRegimeOccupancy(
-  paths: PathAnalysis[],
-): RegimeProbabilities {
-  const counts: RegimeProbabilities = { bull: 0, bear: 0, sideways: 0 };
-  let observationCount = 0;
-
-  for (const path of paths) {
-    for (const regime of path.regimes) {
-      counts[regime] += 1;
-      observationCount += 1;
-    }
-  }
-
-  if (observationCount === 0) {
-    return counts;
-  }
-
-  for (const regime of REGIME_ORDER) {
-    counts[regime] /= observationCount;
-  }
-
-  return counts;
-}
-
-function buildMetrics(
-  inputs: SimulationInputs,
-  monthCount: number,
-  sources: MetricSources,
-): SimulationMetrics {
-  const {
-    terminalValues,
-    maxDrawdowns,
-    recoveryMonths,
-    unrecoveredDrawdownCount,
-  } = sources;
-  const sortedTerminalValues = [...terminalValues].sort(
-    (left, right) => left - right,
-  );
-  const sortedMaxDrawdowns = [...maxDrawdowns].sort(
-    (left, right) => left - right,
-  );
-  const totalContributed =
-    inputs.initialCapital + inputs.monthlyContribution * monthCount;
-  const inflationFactor = (1 + inputs.inflationRate) ** (monthCount / 12);
-  const medianTerminalValue = percentile(sortedTerminalValues, 0.5);
-  const tailCount = Math.max(1, Math.ceil(sortedTerminalValues.length * 0.05));
-  const expectedShortfall = mean(
-    sortedTerminalValues
-      .slice(0, tailCount)
-      .map((value) =>
-        totalContributed === 0
-          ? 0
-          : Math.max(0, 1 - value / totalContributed),
-      ),
-  );
-  const targetShortfalls =
-    inputs.targetValue === 0
-      ? []
-      : terminalValues
-          .filter((value) => value < inputs.targetValue)
-          .map((value) => 1 - value / inputs.targetValue);
-
+function toLegacyMetrics(metrics: PortfolioMetrics): SimulationMetrics {
   return {
-    medianTerminalValue,
-    meanTerminalValue: mean(terminalValues),
-    medianRealValue: medianTerminalValue / inflationFactor,
-    probabilityOfTarget:
-      countWhere(terminalValues, (value) => value >= inputs.targetValue) /
-      terminalValues.length,
-    probabilityOfLoss:
-      countWhere(terminalValues, (value) => value < totalContributed) /
-      terminalValues.length,
-    medianMaxDrawdown: percentile(sortedMaxDrawdowns, 0.5),
+    medianTerminalValue: metrics.wealth.medianTerminalValue,
+    meanTerminalValue: metrics.wealth.meanTerminalValue,
+    medianRealValue: metrics.wealth.medianRealTerminalValue,
+    probabilityOfTarget: metrics.goal.probabilityOfTarget,
+    probabilityOfLoss: metrics.loss.probabilityBelowContributions,
+    medianMaxDrawdown: metrics.drawdown.medianMaximumDrawdown,
     probabilityOfThirtyPercentDrawdown:
-      countWhere(
-        maxDrawdowns,
-        (drawdown) => drawdown > THIRTY_PERCENT_DRAWDOWN,
-      ) / maxDrawdowns.length,
+      metrics.drawdown.probabilityOverThirtyPercent,
     probabilityOfUnrecoveredDrawdown:
-      unrecoveredDrawdownCount / maxDrawdowns.length,
-    // Open episodes are reported separately and are not assigned a duration.
+      metrics.drawdown.probabilityUnrecovered,
     averageRecoveryMonths:
-      recoveryMonths.length === 0 ? null : mean(recoveryMonths),
-    expectedShortfall,
-    averageTargetShortfall:
-      targetShortfalls.length === 0 ? 0 : mean(targetShortfalls),
-    totalContributed,
+      metrics.drawdown.averageCompletedRecoverySteps,
+    expectedShortfall: metrics.loss.tailCapitalShortfall,
+    averageTargetShortfall: metrics.goal.averageShortfallRatio,
+    totalContributed: metrics.wealth.totalContributed,
   };
 }
 
-function percentile(sortedValues: number[], probability: number): number {
-  const position = (sortedValues.length - 1) * probability;
-  const lowerIndex = Math.floor(position);
-  const upperIndex = Math.ceil(position);
-  const interpolationWeight = position - lowerIndex;
-
-  return (
-    sortedValues[lowerIndex] * (1 - interpolationWeight) +
-    sortedValues[upperIndex] * interpolationWeight
-  );
-}
-
-function mean(values: number[]): number {
-  return values.reduce((sum, value) => sum + value, 0) / values.length;
-}
-
-function countWhere(
-  values: number[],
-  predicate: (value: number) => boolean,
-): number {
-  return values.reduce(
-    (count, value) => count + Number(predicate(value)),
-    0,
-  );
+function toLegacyPercentiles(
+  percentiles:
+    | PortfolioCaseDetail["distribution"]["wealthPercentiles"]
+    | PortfolioCaseDetail["distribution"]["drawdownPercentiles"],
+): PercentileSeries {
+  return {
+    p05: [...percentiles.p05.values],
+    p10: [...percentiles.p10.values],
+    p50: [...percentiles.p50.values],
+    p90: [...percentiles.p90.values],
+    p95: [...percentiles.p95.values],
+  };
 }
 
 function normalizeInputs(rawInputs: SimulationInputs): SimulationInputs {

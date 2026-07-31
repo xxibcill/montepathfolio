@@ -7,6 +7,7 @@ import {
   runSimulationCase,
   sampleRegime,
 } from "./simulation";
+import { PORTFOLIO_LAB_LIMITS } from "./portfolio-lab/in-process-runner";
 
 const BASE_INPUTS: SimulationInputs = {
   ...DEFAULT_INPUTS,
@@ -280,6 +281,21 @@ describe("runSimulation", () => {
         },
       }),
     ).toThrow("hmm.transitionMatrix.bear probabilities must sum to 1");
+  });
+
+  it("applies portfolio-lab resource preflight before legacy execution", async () => {
+    const oversizedInputs = {
+      ...BASE_INPUTS,
+      horizonYears: 1 / 12,
+      pathCount: PORTFOLIO_LAB_LIMITS.paths + 1,
+    };
+
+    expect(() => runSimulation(oversizedInputs)).toThrow(
+      /RESOURCE_LIMIT.*paths/i,
+    );
+    await expect(
+      runSimulationCase(oversizedInputs, new AbortController().signal),
+    ).rejects.toThrow(/RESOURCE_LIMIT.*paths/i);
   });
 
   it("preserves each path's shock prefix across horizons and path counts", () => {

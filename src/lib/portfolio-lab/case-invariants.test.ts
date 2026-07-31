@@ -10,7 +10,7 @@ import {
   type PortfolioLabResult,
   type PortfolioLabRun,
 } from "./contracts";
-import { createLegacyPortfolioLabRunner } from "./legacy-runner";
+import { createInProcessPortfolioLabRunner } from "./in-process-runner";
 import { PORTFOLIO_RANDOM_STREAM_VERSION } from "./semantic-random";
 
 const BASELINE_CASE_ID = asPortfolioCaseId("baseline");
@@ -101,7 +101,7 @@ const BASE_REQUEST = {
 
 describe("portfolio-lab case invariants", () => {
   it("keeps every case result stable when cases are reordered", async () => {
-    const runner = createLegacyPortfolioLabRunner();
+    const runner = createInProcessPortfolioLabRunner();
     const original = await runSuccessfully(runner.run(BASE_REQUEST).outcome);
     const reorderedRequest = {
       ...BASE_REQUEST,
@@ -123,7 +123,7 @@ describe("portfolio-lab case invariants", () => {
   });
 
   it("keeps existing case results stable when a comparison is added", async () => {
-    const runner = createLegacyPortfolioLabRunner();
+    const runner = createInProcessPortfolioLabRunner();
     const originalRequest = {
       ...BASE_REQUEST,
       cases: [BASELINE_CASE, REGIMES_CASE],
