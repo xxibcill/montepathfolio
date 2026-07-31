@@ -37,6 +37,7 @@ import {
   type TwoAssetMarketAssumptions,
   type UnsupportedContractProblem,
 } from "./contracts";
+import { PORTFOLIO_RANDOM_STREAM_VERSION } from "./semantic-random";
 
 const LEGACY_STEP_YEARS = 1 / 12;
 const PROBABILITY_SUM_TOLERANCE = 1e-8;
@@ -1103,7 +1104,7 @@ function buildResult(
       contract: PORTFOLIO_LAB_CONTRACT.provenance,
       requestContract: request.contract,
       engineVersion: "legacy-portfolio-simulation@1",
-      randomStreamVersion: "legacy-path-streams@1",
+      randomStreamVersion: PORTFOLIO_RANDOM_STREAM_VERSION,
       eventOrderVersion: "market-cashflow-rebalance-record@1",
       quantileMethod: "linear-r7",
       seed: request.execution.seed,

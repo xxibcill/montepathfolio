@@ -102,7 +102,7 @@ The complete payload type lives in [`src/types/hmm-model.ts`](src/types/hmm-mode
 
 A production Python service can train a three-state Gaussian HMM from weekly log returns and realized volatility, label the otherwise arbitrary state IDs by their learned return/volatility statistics, and export the same JSON shape.
 
-Every UI run uses 1,000 paths. Gaussian asset shocks and HMM regime transitions use separate deterministic seeded streams. Standard and HMM paths share the same asset shocks, and corresponding paths keep the same shock prefix when the horizon changes, which makes model and scenario comparisons easier to interpret. The charts calculate monthly 5th, 10th, 50th, 90th, and 95th percentiles; up to 160 representative paths are retained for rendering.
+Every UI run uses 1,000 paths. Gaussian asset shocks and HMM regime transitions use [versioned semantic random streams](docs/semantic-random-streams.md) keyed by seed, comparison group, path, step, and role. Standard and HMM paths share the same diffusion addresses, unrelated draws cannot shift existing values, and corresponding paths keep the same shock prefix when the horizon changes. The charts calculate monthly 5th, 10th, 50th, 90th, and 95th percentiles; up to 160 representative paths are retained for rendering.
 
 Drawdown is measured on a parallel cash-flow-neutral portfolio index using the same asset shocks, allocation, and rebalancing schedule. Monthly deposits therefore increase the wealth paths without masking investment losses in the drawdown metrics.
 

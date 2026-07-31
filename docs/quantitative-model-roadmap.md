@@ -34,7 +34,7 @@ labels suggest.
 | Correlated stock and bond shocks | Implemented with two Gaussian streams | Generalize only when a multi-asset model needs it |
 | Portfolio accounting | Contributions, stock/bond allocation, and rebalancing exist | Separate from market dynamics and later extend to withdrawals and policies |
 | Risk summaries | Terminal values, drawdowns, recovery, target probability, and a tail capital-shortfall measure exist | Preserve, group by meaning, and correct terminology before adding VaR/CVaR |
-| Reproducibility | Seeded paths, shared shocks, and stable horizon prefixes are tested | Promote these behaviors to interface invariants |
+| Reproducibility | Versioned semantic streams provide shared shocks, isolated roles, and stable horizon prefixes | Preserve these behaviors as interface invariants |
 | Execution | Pure TypeScript runs in a browser Web Worker | Retain worker execution and add an in-process test adapter |
 
 The current `SimulationInputs` and `SimulationResult` types should not be widened
