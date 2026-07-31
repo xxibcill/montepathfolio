@@ -87,6 +87,118 @@ describe("runSimulation", () => {
     expect(result.metrics).toEqual(result.comparisonMetrics.hmm);
   });
 
+  it("advances the HMM state before applying and recording the month's return", () => {
+    const monthlyDoublingAnnualReturn = 12 * Math.log(2);
+    const result = runSimulation({
+      ...BASE_INPUTS,
+      initialCapital: 100,
+      monthlyContribution: 0,
+      horizonYears: 1 / 12,
+      stockAllocation: 1,
+      model: "hmm",
+      stocks: { expectedReturn: 0, volatility: 0 },
+      bonds: { expectedReturn: 0, volatility: 0 },
+      correlation: 0,
+      rebalanceFrequency: "never",
+      pathCount: 1,
+      hmm: {
+        regimes: {
+          bull: {
+            stocks: { expectedReturn: 0, volatility: 0 },
+            bonds: { expectedReturn: 0, volatility: 0 },
+            correlation: 0,
+          },
+          bear: {
+            stocks: {
+              expectedReturn: monthlyDoublingAnnualReturn,
+              volatility: 0,
+            },
+            bonds: { expectedReturn: 0, volatility: 0 },
+            correlation: 0,
+          },
+          sideways: {
+            stocks: { expectedReturn: 0, volatility: 0 },
+            bonds: { expectedReturn: 0, volatility: 0 },
+            correlation: 0,
+          },
+        },
+        currentStateProbabilities: { bull: 1, bear: 0, sideways: 0 },
+        transitionMatrix: {
+          bull: { bull: 0, bear: 1, sideways: 0 },
+          bear: { bull: 0, bear: 1, sideways: 0 },
+          sideways: { bull: 0, bear: 0, sideways: 1 },
+        },
+      },
+    });
+
+    expect(result.months).toEqual([0, 1]);
+    expect(result.sampleRegimePaths[0]).toEqual(["bull", "bear"]);
+    expect(result.samplePaths[0][0]).toBe(100);
+    expect(result.samplePaths[0][1]).toBeCloseTo(200, 12);
+  });
+
+  it("applies returns before contributions and rebalances before the next month", () => {
+    const monthlyDoublingAnnualReturn = 12 * Math.log(2);
+    const result = runSimulation({
+      ...BASE_INPUTS,
+      initialCapital: 100,
+      monthlyContribution: 30,
+      horizonYears: 2 / 12,
+      stockAllocation: 0.5,
+      model: "constant",
+      stocks: {
+        expectedReturn: monthlyDoublingAnnualReturn,
+        volatility: 0,
+      },
+      bonds: { expectedReturn: 0, volatility: 0 },
+      correlation: 0,
+      rebalanceFrequency: "monthly",
+      inflationRate: 0,
+      targetValue: 0,
+      pathCount: 1,
+    });
+
+    /*
+     * Opening holdings are 50/50. Month one applies returns (100/50), adds the
+     * contribution (115/65), then rebalances to 90/90 and records 180. Month
+     * two therefore starts from 90/90, reaches 270 after returns, adds 30, and
+     * records 300 after rebalancing.
+     */
+    expect(result.months).toEqual([0, 1, 2]);
+    expect(result.samplePaths[0]).toHaveLength(3);
+    expect(result.samplePaths[0][0]).toBe(100);
+    expect(result.samplePaths[0][1]).toBeCloseTo(180, 12);
+    expect(result.samplePaths[0][2]).toBeCloseTo(300, 12);
+    expect(result.terminalValues[0]).toBeCloseTo(300, 12);
+  });
+
+  it("records cash-flow-neutral drawdown after the month's market return", () => {
+    const monthlyHalvingAnnualReturn = 12 * Math.log(0.5);
+    const result = runSimulation({
+      ...BASE_INPUTS,
+      initialCapital: 100,
+      monthlyContribution: 100,
+      horizonYears: 1 / 12,
+      stockAllocation: 1,
+      model: "constant",
+      stocks: {
+        expectedReturn: monthlyHalvingAnnualReturn,
+        volatility: 0,
+      },
+      bonds: { expectedReturn: 0, volatility: 0 },
+      correlation: 0,
+      rebalanceFrequency: "never",
+      inflationRate: 0,
+      targetValue: 0,
+      pathCount: 1,
+    });
+
+    expect(result.samplePaths[0]).toEqual([100, 150]);
+    expect(result.sampleDrawdownPaths[0][0]).toBe(0);
+    expect(result.sampleDrawdownPaths[0][1]).toBeCloseTo(0.5, 12);
+    expect(result.maxDrawdowns[0]).toBeCloseTo(0.5, 12);
+  });
+
   it("returns both model summaries while exposing only selected-model paths", () => {
     const constant = runSimulation({
       ...BASE_INPUTS,
