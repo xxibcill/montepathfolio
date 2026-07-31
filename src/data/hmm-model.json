@@ -1,0 +1,86 @@
+{
+  "metadata": {
+    "name": "Three-state educational market model",
+    "observationFrequency": "weekly",
+    "features": ["log return", "realized volatility"],
+    "calibration": "Illustrative training-service payload; not fitted to live market data"
+  },
+  "states": [
+    {
+      "id": 0,
+      "label": "bull",
+      "stocks": {
+        "annualReturn": 0.12,
+        "annualVolatility": 0.14
+      },
+      "bonds": {
+        "annualReturn": 0.035,
+        "annualVolatility": 0.05
+      },
+      "correlation": 0.05
+    },
+    {
+      "id": 1,
+      "label": "bear",
+      "stocks": {
+        "annualReturn": -0.18,
+        "annualVolatility": 0.32
+      },
+      "bonds": {
+        "annualReturn": 0.05,
+        "annualVolatility": 0.08
+      },
+      "correlation": -0.15
+    },
+    {
+      "id": 2,
+      "label": "sideways",
+      "stocks": {
+        "annualReturn": 0.03,
+        "annualVolatility": 0.1
+      },
+      "bonds": {
+        "annualReturn": 0.03,
+        "annualVolatility": 0.06
+      },
+      "correlation": 0.15
+    }
+  ],
+  "transitionMatrix": [
+    [0.94, 0.02, 0.04],
+    [0.08, 0.87, 0.05],
+    [0.12, 0.05, 0.83]
+  ],
+  "currentStateProbabilities": [0.65, 0.1, 0.25],
+  "history": [
+    { "date": "2018-01", "normalizedPrice": 100, "state": "bull" },
+    { "date": "2018-04", "normalizedPrice": 103, "state": "sideways" },
+    { "date": "2018-07", "normalizedPrice": 109, "state": "bull" },
+    { "date": "2018-10", "normalizedPrice": 101, "state": "bear" },
+    { "date": "2019-01", "normalizedPrice": 108, "state": "bull" },
+    { "date": "2019-04", "normalizedPrice": 114, "state": "bull" },
+    { "date": "2019-07", "normalizedPrice": 116, "state": "sideways" },
+    { "date": "2019-10", "normalizedPrice": 121, "state": "bull" },
+    { "date": "2020-01", "normalizedPrice": 124, "state": "bull" },
+    { "date": "2020-04", "normalizedPrice": 98, "state": "bear" },
+    { "date": "2020-07", "normalizedPrice": 118, "state": "bull" },
+    { "date": "2020-10", "normalizedPrice": 123, "state": "bull" },
+    { "date": "2021-01", "normalizedPrice": 132, "state": "bull" },
+    { "date": "2021-04", "normalizedPrice": 141, "state": "bull" },
+    { "date": "2021-07", "normalizedPrice": 147, "state": "bull" },
+    { "date": "2021-10", "normalizedPrice": 153, "state": "bull" },
+    { "date": "2022-01", "normalizedPrice": 148, "state": "sideways" },
+    { "date": "2022-04", "normalizedPrice": 137, "state": "bear" },
+    { "date": "2022-07", "normalizedPrice": 132, "state": "bear" },
+    { "date": "2022-10", "normalizedPrice": 136, "state": "sideways" },
+    { "date": "2023-01", "normalizedPrice": 142, "state": "bull" },
+    { "date": "2023-04", "normalizedPrice": 147, "state": "bull" },
+    { "date": "2023-07", "normalizedPrice": 151, "state": "sideways" },
+    { "date": "2023-10", "normalizedPrice": 157, "state": "bull" },
+    { "date": "2024-01", "normalizedPrice": 163, "state": "bull" },
+    { "date": "2024-04", "normalizedPrice": 166, "state": "sideways" },
+    { "date": "2024-07", "normalizedPrice": 173, "state": "bull" },
+    { "date": "2024-10", "normalizedPrice": 179, "state": "bull" },
+    { "date": "2025-01", "normalizedPrice": 183, "state": "bull" }
+  ]
+}

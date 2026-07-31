@@ -1,9 +1,14 @@
 import type {
   PercentileSeries,
+  Regime,
+  RegimeAssumptions,
+  RegimeProbabilities,
+  SimulationModel,
   SimulationInputs,
   SimulationMetrics,
   SimulationResult,
 } from "../types/simulation";
+import { REGIME_ORDER } from "./defaults";
 
 const DEFAULT_PATH_COUNT = 1_000;
 const MAX_SAMPLE_PATHS = 160;
@@ -15,6 +20,7 @@ interface MonthlyModel {
   stockDiffusion: number;
   bondDrift: number;
   bondDiffusion: number;
+  correlation: number;
   independentBondWeight: number;
 }
 
@@ -24,6 +30,7 @@ interface PathAnalysis {
   maxDrawdown: number;
   recoveryMonths: number[];
   hasUnrecoveredDrawdown: boolean;
+  regimes: Regime[];
 }
 
 interface MetricSources {
@@ -36,31 +43,44 @@ interface MetricSources {
 export function runSimulation(rawInputs: SimulationInputs): SimulationResult {
   const inputs = normalizeInputs(rawInputs);
   const monthCount = Math.round(inputs.horizonYears * MONTHS_PER_YEAR);
-  const paths = simulatePaths(inputs, monthCount);
+  // Both models use identical asset-shock streams. The HMM draws regimes from a
+  // separate seeded stream so comparison deltas reflect the model, not luck.
+  const pathsByModel: Record<SimulationModel, PathAnalysis[]> = {
+    constant: simulatePaths(inputs, monthCount, "constant"),
+    hmm: simulatePaths(inputs, monthCount, "hmm"),
+  };
+  const paths = pathsByModel[inputs.model];
   const pathValues = paths.map((path) => path.values);
   const drawdownValues = paths.map((path) => path.drawdowns);
   const terminalValues = paths.map((path) => path.values[monthCount]);
   const maxDrawdowns = paths.map((path) => path.maxDrawdown);
-  const recoveryMonths = paths.flatMap((path) => path.recoveryMonths);
-  const unrecoveredDrawdownCount = paths.filter(
-    (path) => path.hasUnrecoveredDrawdown,
-  ).length;
+  const sampleIndexes = selectSampleIndexes(paths.length);
+  const comparisonMetrics = {
+    constant: buildMetricsFromPaths(
+      inputs,
+      monthCount,
+      pathsByModel.constant,
+    ),
+    hmm: buildMetricsFromPaths(inputs, monthCount, pathsByModel.hmm),
+  };
 
   return {
     inputs,
     months: Array.from({ length: monthCount + 1 }, (_, month) => month),
-    samplePaths: selectSamplePaths(pathValues),
-    sampleDrawdownPaths: selectSamplePaths(drawdownValues),
+    samplePaths: sampleIndexes.map((index) => pathValues[index]),
+    sampleDrawdownPaths: sampleIndexes.map((index) => drawdownValues[index]),
     pathPercentiles: buildPercentileSeries(pathValues, monthCount + 1),
     drawdownPercentiles: buildPercentileSeries(drawdownValues, monthCount + 1),
     terminalValues,
     maxDrawdowns,
-    metrics: buildMetrics(inputs, monthCount, {
-      terminalValues,
-      maxDrawdowns,
-      recoveryMonths,
-      unrecoveredDrawdownCount,
-    }),
+    sampleRegimePaths:
+      inputs.model === "hmm"
+        ? sampleIndexes.map((index) => paths[index].regimes)
+        : [],
+    regimeOccupancy:
+      inputs.model === "hmm" ? calculateRegimeOccupancy(paths) : null,
+    metrics: comparisonMetrics[inputs.model],
+    comparisonMetrics,
     computedAt: Date.now(),
   };
 }
@@ -70,14 +90,37 @@ export const simulatePortfolio = runSimulation;
 function simulatePaths(
   inputs: SimulationInputs,
   monthCount: number,
+  modelType: SimulationModel,
 ): PathAnalysis[] {
-  const model = createMonthlyModel(inputs);
+  const constantModel = createMonthlyModel({
+    stocks: inputs.stocks,
+    bonds: inputs.bonds,
+    correlation: inputs.correlation,
+  });
+  const regimeModels = Object.fromEntries(
+    REGIME_ORDER.map((regime) => [
+      regime,
+      createMonthlyModel(inputs.hmm.regimes[regime]),
+    ]),
+  ) as Record<Regime, MonthlyModel>;
   const paths: PathAnalysis[] = [];
 
   for (let pathIndex = 0; pathIndex < inputs.pathCount; pathIndex += 1) {
     const pathSeed = derivePathSeed(inputs.seed, pathIndex);
     const nextNormal = createNormalGenerator(pathSeed);
-    paths.push(simulatePath(inputs, monthCount, model, nextNormal));
+    const regimeSeed = derivePathSeed(inputs.seed ^ 0x51f15e, pathIndex);
+    const nextRegimeUniform = createUniformGenerator(regimeSeed);
+    paths.push(
+      simulatePath(
+        inputs,
+        monthCount,
+        modelType,
+        constantModel,
+        regimeModels,
+        nextNormal,
+        nextRegimeUniform,
+      ),
+    );
   }
 
   return paths;
@@ -86,8 +129,11 @@ function simulatePaths(
 function simulatePath(
   inputs: SimulationInputs,
   monthCount: number,
-  model: MonthlyModel,
+  modelType: SimulationModel,
+  constantModel: MonthlyModel,
+  regimeModels: Record<Regime, MonthlyModel>,
   nextNormal: () => number,
+  nextRegimeUniform: () => number,
 ): PathAnalysis {
   let stockValue = inputs.initialCapital * inputs.stockAllocation;
   let bondValue = inputs.initialCapital - stockValue;
@@ -95,11 +141,24 @@ function simulatePath(
   let navBondValue = 1 - inputs.stockAllocation;
   const values = [inputs.initialCapital];
   const navValues = [1];
+  let regime =
+    modelType === "hmm"
+      ? sampleRegime(inputs.hmm.currentStateProbabilities, nextRegimeUniform())
+      : null;
+  const regimes: Regime[] = regime ? [regime] : [];
 
   for (let month = 1; month <= monthCount; month += 1) {
+    if (regime) {
+      regime = sampleRegime(
+        inputs.hmm.transitionMatrix[regime],
+        nextRegimeUniform(),
+      );
+      regimes.push(regime);
+    }
+    const model = regime ? regimeModels[regime] : constantModel;
     const stockShock = nextNormal();
     const bondShock =
-      inputs.correlation * stockShock +
+      model.correlation * stockShock +
       model.independentBondWeight * nextNormal();
     const stockGrowth = Math.exp(
       model.stockDrift + model.stockDiffusion * stockShock,
@@ -137,22 +196,47 @@ function simulatePath(
     navValues.push(navValue);
   }
 
-  return { values, ...analyzeDrawdowns(navValues) };
+  return { values, regimes, ...analyzeDrawdowns(navValues) };
 }
 
-function createMonthlyModel(inputs: SimulationInputs): MonthlyModel {
-  const stockVariance = inputs.stocks.volatility ** 2;
-  const bondVariance = inputs.bonds.volatility ** 2;
+function createMonthlyModel(assumptions: RegimeAssumptions): MonthlyModel {
+  const stockVariance = assumptions.stocks.volatility ** 2;
+  const bondVariance = assumptions.bonds.volatility ** 2;
 
   return {
-    stockDrift: (inputs.stocks.expectedReturn - stockVariance / 2) / 12,
-    stockDiffusion: inputs.stocks.volatility / Math.sqrt(12),
-    bondDrift: (inputs.bonds.expectedReturn - bondVariance / 2) / 12,
-    bondDiffusion: inputs.bonds.volatility / Math.sqrt(12),
+    stockDrift:
+      (assumptions.stocks.expectedReturn - stockVariance / 2) /
+      MONTHS_PER_YEAR,
+    stockDiffusion:
+      assumptions.stocks.volatility / Math.sqrt(MONTHS_PER_YEAR),
+    bondDrift:
+      (assumptions.bonds.expectedReturn - bondVariance / 2) /
+      MONTHS_PER_YEAR,
+    bondDiffusion:
+      assumptions.bonds.volatility / Math.sqrt(MONTHS_PER_YEAR),
+    correlation: assumptions.correlation,
     independentBondWeight: Math.sqrt(
-      Math.max(0, 1 - inputs.correlation ** 2),
+      Math.max(0, 1 - assumptions.correlation ** 2),
     ),
   };
+}
+
+export function sampleRegime(
+  probabilities: RegimeProbabilities,
+  randomValue: number,
+): Regime {
+  let cumulativeProbability = 0;
+
+  for (const regime of REGIME_ORDER) {
+    cumulativeProbability += probabilities[regime];
+    if (randomValue <= cumulativeProbability) {
+      return regime;
+    }
+  }
+
+  // Floating-point rounding can leave the cumulative value infinitesimally
+  // below one. The final state is the deterministic fallback.
+  return REGIME_ORDER.at(-1)!;
 }
 
 function shouldRebalance(
@@ -177,7 +261,9 @@ function rebalance(
   };
 }
 
-function analyzeDrawdowns(values: number[]): Omit<PathAnalysis, "values"> {
+function analyzeDrawdowns(
+  values: number[],
+): Omit<PathAnalysis, "values" | "regimes"> {
   let peak = values[0];
   let underwaterSince: number | null = null;
   let maxDrawdown = 0;
@@ -236,17 +322,55 @@ function buildPercentileSeries(
   return series;
 }
 
-function selectSamplePaths(paths: number[][]): number[][] {
-  if (paths.length <= MAX_SAMPLE_PATHS) {
-    return paths;
+function selectSampleIndexes(pathCount: number): number[] {
+  if (pathCount <= MAX_SAMPLE_PATHS) {
+    return Array.from({ length: pathCount }, (_, index) => index);
   }
 
   return Array.from({ length: MAX_SAMPLE_PATHS }, (_, sampleIndex) => {
-    const pathIndex = Math.round(
-      (sampleIndex * (paths.length - 1)) / (MAX_SAMPLE_PATHS - 1),
+    return Math.round(
+      (sampleIndex * (pathCount - 1)) / (MAX_SAMPLE_PATHS - 1),
     );
-    return paths[pathIndex];
   });
+}
+
+function buildMetricsFromPaths(
+  inputs: SimulationInputs,
+  monthCount: number,
+  paths: PathAnalysis[],
+): SimulationMetrics {
+  return buildMetrics(inputs, monthCount, {
+    terminalValues: paths.map((path) => path.values[monthCount]),
+    maxDrawdowns: paths.map((path) => path.maxDrawdown),
+    recoveryMonths: paths.flatMap((path) => path.recoveryMonths),
+    unrecoveredDrawdownCount: paths.filter(
+      (path) => path.hasUnrecoveredDrawdown,
+    ).length,
+  });
+}
+
+function calculateRegimeOccupancy(
+  paths: PathAnalysis[],
+): RegimeProbabilities {
+  const counts: RegimeProbabilities = { bull: 0, bear: 0, sideways: 0 };
+  let observationCount = 0;
+
+  for (const path of paths) {
+    for (const regime of path.regimes) {
+      counts[regime] += 1;
+      observationCount += 1;
+    }
+  }
+
+  if (observationCount === 0) {
+    return counts;
+  }
+
+  for (const regime of REGIME_ORDER) {
+    counts[regime] /= observationCount;
+  }
+
+  return counts;
 }
 
 function buildMetrics(
@@ -270,6 +394,16 @@ function buildMetrics(
     inputs.initialCapital + inputs.monthlyContribution * monthCount;
   const inflationFactor = (1 + inputs.inflationRate) ** (monthCount / 12);
   const medianTerminalValue = percentile(sortedTerminalValues, 0.5);
+  const tailCount = Math.max(1, Math.ceil(sortedTerminalValues.length * 0.05));
+  const expectedShortfall = mean(
+    sortedTerminalValues
+      .slice(0, tailCount)
+      .map((value) =>
+        totalContributed === 0
+          ? 0
+          : Math.max(0, 1 - value / totalContributed),
+      ),
+  );
 
   return {
     medianTerminalValue,
@@ -292,6 +426,7 @@ function buildMetrics(
     // Open episodes are reported separately and are not assigned a duration.
     averageRecoveryMonths:
       recoveryMonths.length === 0 ? null : mean(recoveryMonths),
+    expectedShortfall,
     totalContributed,
   };
 }
@@ -376,6 +511,27 @@ function normalizeInputs(rawInputs: SimulationInputs): SimulationInputs {
     ...rawInputs,
     stocks: { ...rawInputs.stocks },
     bonds: { ...rawInputs.bonds },
+    hmm: {
+      regimes: Object.fromEntries(
+        REGIME_ORDER.map((regime) => [
+          regime,
+          {
+            stocks: { ...rawInputs.hmm.regimes[regime].stocks },
+            bonds: { ...rawInputs.hmm.regimes[regime].bonds },
+            correlation: rawInputs.hmm.regimes[regime].correlation,
+          },
+        ]),
+      ) as SimulationInputs["hmm"]["regimes"],
+      transitionMatrix: Object.fromEntries(
+        REGIME_ORDER.map((regime) => [
+          regime,
+          { ...rawInputs.hmm.transitionMatrix[regime] },
+        ]),
+      ) as SimulationInputs["hmm"]["transitionMatrix"],
+      currentStateProbabilities: {
+        ...rawInputs.hmm.currentStateProbabilities,
+      },
+    },
     pathCount: rawInputs.pathCount ?? DEFAULT_PATH_COUNT,
     seed: Math.trunc(rawInputs.seed),
   };
@@ -392,6 +548,7 @@ function validateInputs(inputs: SimulationInputs): void {
   assertAssetAssumptions("stocks", inputs.stocks);
   assertAssetAssumptions("bonds", inputs.bonds);
   assertInRange("correlation", inputs.correlation, -1, 1);
+  assertHMMConfiguration(inputs);
   assertFiniteNumber("inflationRate", inputs.inflationRate);
   assertNonNegative("targetValue", inputs.targetValue);
   assertPositiveInteger("pathCount", inputs.pathCount);
@@ -405,6 +562,64 @@ function validateInputs(inputs: SimulationInputs): void {
   }
   if (!["monthly", "annual", "never"].includes(inputs.rebalanceFrequency)) {
     throw new Error("rebalanceFrequency is invalid");
+  }
+  if (!["constant", "hmm"].includes(inputs.model)) {
+    throw new Error("model is invalid");
+  }
+}
+
+function assertHMMConfiguration(inputs: SimulationInputs): void {
+  if (!inputs.hmm || typeof inputs.hmm !== "object") {
+    throw new Error("hmm configuration is required");
+  }
+
+  for (const regime of REGIME_ORDER) {
+    const assumptions = inputs.hmm.regimes?.[regime];
+    if (!assumptions || typeof assumptions !== "object") {
+      throw new Error(`hmm.regimes.${regime} assumptions are required`);
+    }
+    assertAssetAssumptions(
+      `hmm.regimes.${regime}.stocks`,
+      assumptions.stocks,
+    );
+    assertAssetAssumptions(
+      `hmm.regimes.${regime}.bonds`,
+      assumptions.bonds,
+    );
+    assertInRange(
+      `hmm.regimes.${regime}.correlation`,
+      assumptions.correlation,
+      -1,
+      1,
+    );
+    assertProbabilityDistribution(
+      `hmm.transitionMatrix.${regime}`,
+      inputs.hmm.transitionMatrix?.[regime],
+    );
+  }
+
+  assertProbabilityDistribution(
+    "hmm.currentStateProbabilities",
+    inputs.hmm.currentStateProbabilities,
+  );
+}
+
+function assertProbabilityDistribution(
+  name: string,
+  probabilities: RegimeProbabilities | undefined,
+): void {
+  if (!probabilities || typeof probabilities !== "object") {
+    throw new Error(`${name} is required`);
+  }
+
+  let sum = 0;
+  for (const regime of REGIME_ORDER) {
+    assertInRange(`${name}.${regime}`, probabilities[regime], 0, 1);
+    sum += probabilities[regime];
+  }
+
+  if (Math.abs(sum - 1) > 1e-8) {
+    throw new Error(`${name} probabilities must sum to 1`);
   }
 }
 

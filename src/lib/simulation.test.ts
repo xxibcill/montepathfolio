@@ -1,13 +1,16 @@
 import { describe, expect, it } from "vitest";
 
 import type { SimulationInputs } from "../types/simulation";
-import { runSimulation } from "./simulation";
+import { DEFAULT_INPUTS } from "./defaults";
+import { runSimulation, sampleRegime } from "./simulation";
 
 const BASE_INPUTS: SimulationInputs = {
+  ...DEFAULT_INPUTS,
   initialCapital: 25_000,
   monthlyContribution: 500,
   horizonYears: 10,
   stockAllocation: 0.7,
+  model: "constant",
   stocks: {
     expectedReturn: 0.08,
     volatility: 0.18,
@@ -36,7 +39,94 @@ describe("runSimulation", () => {
     expect(second.drawdownPercentiles).toEqual(first.drawdownPercentiles);
     expect(second.terminalValues).toEqual(first.terminalValues);
     expect(second.maxDrawdowns).toEqual(first.maxDrawdowns);
+    expect(second.sampleRegimePaths).toEqual(first.sampleRegimePaths);
+    expect(second.regimeOccupancy).toEqual(first.regimeOccupancy);
     expect(second.metrics).toEqual(first.metrics);
+    expect(second.comparisonMetrics).toEqual(first.comparisonMetrics);
+  });
+
+  it("samples categorical regimes at cumulative probability boundaries", () => {
+    const probabilities = { bull: 0.5, bear: 0.2, sideways: 0.3 };
+
+    expect(sampleRegime(probabilities, 0)).toBe("bull");
+    expect(sampleRegime(probabilities, 0.5)).toBe("bull");
+    expect(sampleRegime(probabilities, 0.500_001)).toBe("bear");
+    expect(sampleRegime(probabilities, 0.7)).toBe("bear");
+    expect(sampleRegime(probabilities, 0.700_001)).toBe("sideways");
+    expect(sampleRegime(probabilities, 1)).toBe("sideways");
+  });
+
+  it("keeps an absorbing bull regime active for every HMM month", () => {
+    const result = runSimulation({
+      ...BASE_INPUTS,
+      model: "hmm",
+      horizonYears: 2,
+      pathCount: 24,
+      hmm: {
+        ...BASE_INPUTS.hmm,
+        currentStateProbabilities: { bull: 1, bear: 0, sideways: 0 },
+        transitionMatrix: {
+          bull: { bull: 1, bear: 0, sideways: 0 },
+          bear: { bull: 0, bear: 1, sideways: 0 },
+          sideways: { bull: 0, bear: 0, sideways: 1 },
+        },
+      },
+    });
+
+    expect(result.sampleRegimePaths).toHaveLength(24);
+    expect(result.sampleRegimePaths.every(
+      (path) =>
+        path.length === result.months.length &&
+        path.every((regime) => regime === "bull"),
+    )).toBe(true);
+    expect(result.regimeOccupancy).toEqual({
+      bull: 1,
+      bear: 0,
+      sideways: 0,
+    });
+    expect(result.metrics).toEqual(result.comparisonMetrics.hmm);
+  });
+
+  it("returns both model summaries while exposing only selected-model paths", () => {
+    const constant = runSimulation({
+      ...BASE_INPUTS,
+      model: "constant",
+      horizonYears: 2,
+      pathCount: 80,
+    });
+    const hmm = runSimulation({
+      ...BASE_INPUTS,
+      model: "hmm",
+      horizonYears: 2,
+      pathCount: 80,
+    });
+
+    expect(constant.sampleRegimePaths).toEqual([]);
+    expect(constant.regimeOccupancy).toBeNull();
+    expect(constant.metrics).toEqual(constant.comparisonMetrics.constant);
+    expect(hmm.metrics).toEqual(hmm.comparisonMetrics.hmm);
+    expect(hmm.comparisonMetrics.constant).toEqual(
+      constant.comparisonMetrics.constant,
+    );
+    expect(hmm.comparisonMetrics.hmm).toEqual(
+      constant.comparisonMetrics.hmm,
+    );
+  });
+
+  it("rejects transition rows that do not sum to one", () => {
+    expect(() =>
+      runSimulation({
+        ...BASE_INPUTS,
+        model: "hmm",
+        hmm: {
+          ...BASE_INPUTS.hmm,
+          transitionMatrix: {
+            ...BASE_INPUTS.hmm.transitionMatrix,
+            bear: { bull: 0.08, bear: 0.8, sideways: 0.05 },
+          },
+        },
+      }),
+    ).toThrow("hmm.transitionMatrix.bear probabilities must sum to 1");
   });
 
   it("preserves each path's shock prefix across horizons and path counts", () => {
@@ -235,6 +325,8 @@ describe("runSimulation", () => {
       0,
     );
     expect(result.metrics.probabilityOfUnrecoveredDrawdown).toBeLessThanOrEqual(1);
+    expect(result.metrics.expectedShortfall).toBeGreaterThanOrEqual(0);
+    expect(result.metrics.expectedShortfall).toBeLessThanOrEqual(1);
     expect(result.samplePaths).toHaveLength(160);
     expect(result.sampleDrawdownPaths).toHaveLength(160);
     expect(result.terminalValues).toHaveLength(500);

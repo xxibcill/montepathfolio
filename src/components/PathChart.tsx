@@ -391,7 +391,10 @@ export function PathChart({
         </span>
         <span className="chart-caption__detail">
           Each faint line is one possible path; bands show the 5th–95th and
-          10th–90th percentile ranges.
+          10th–90th percentile ranges
+          {result.inputs.model === "hmm"
+            ? ", with regime strips sampled below."
+            : "."}
         </span>
       </figcaption>
     </figure>

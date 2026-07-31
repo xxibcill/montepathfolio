@@ -1,9 +1,12 @@
 import type { CSSProperties } from "react";
 import { useNumberDraft } from "../hooks/useNumberDraft";
+import { TransitionMatrixEditor } from "./TransitionMatrixEditor";
 import type {
   AssetAssumptions,
+  HMMConfiguration,
   RebalanceFrequency,
   SimulationInputs,
+  SimulationModel,
 } from "../types/simulation";
 
 const FIXED_PATH_COUNT = 1_000;
@@ -269,6 +272,10 @@ export function ScenarioControls({
     });
   }
 
+  function updateHMM(hmm: HMMConfiguration) {
+    onChange({ ...inputs, hmm, pathCount: FIXED_PATH_COUNT });
+  }
+
   return (
     <div className="scenario-controls" aria-busy={isRunning}>
       {isRunning || typeof isDirty === "boolean" ? (
@@ -283,6 +290,52 @@ export function ScenarioControls({
               : "Results are up to date"}
         </p>
       ) : null}
+
+      <fieldset className="scenario-controls__section">
+        <legend>Market model</legend>
+        <div className="model-selector">
+          {(
+            [
+              {
+                value: "hmm",
+                label: "Regime switching",
+                detail: "Bull, bear, and sideways states persist and change.",
+              },
+              {
+                value: "constant",
+                label: "Standard",
+                detail: "One return, volatility, and correlation throughout.",
+              },
+            ] as const
+          ).map((option) => (
+            <label
+              className="model-selector__option"
+              data-selected={inputs.model === option.value}
+              key={option.value}
+            >
+              <input
+                type="radio"
+                name="market-model"
+                value={option.value}
+                checked={inputs.model === option.value}
+                onChange={(event) =>
+                  updateInput(
+                    "model",
+                    event.currentTarget.value as SimulationModel,
+                  )
+                }
+              />
+              <span>
+                <strong>{option.label}</strong>
+                <small>{option.detail}</small>
+              </span>
+            </label>
+          ))}
+        </div>
+        <p className="scenario-controls__note">
+          Both models run on the same shocks so the comparison below stays fair.
+        </p>
+      </fieldset>
 
       <fieldset className="scenario-controls__section">
         <legend>Starting point</legend>
@@ -378,11 +431,20 @@ export function ScenarioControls({
       <details className="assumptions-disclosure">
         <summary>
           <span>Model assumptions</span>
-          <small>Returns, volatility, correlation, and inflation</small>
+          <small>Regimes, transitions, asset moments, and inflation</small>
         </summary>
         <div className="assumptions-disclosure__content">
           <fieldset className="scenario-controls__section">
-            <legend>Market assumptions</legend>
+            <legend>Regime transition heatmap</legend>
+            <TransitionMatrixEditor
+              configuration={inputs.hmm}
+              stockAllocation={inputs.stockAllocation}
+              onChange={updateHMM}
+            />
+          </fieldset>
+
+          <fieldset className="scenario-controls__section">
+            <legend>Constant-model baseline</legend>
             <div className="asset-assumptions-grid">
               <AssetAssumptionControls
                 asset="stocks"
@@ -396,7 +458,8 @@ export function ScenarioControls({
               />
             </div>
             <p className="scenario-controls__note">
-              Returns and volatility are annual assumptions before inflation.
+              Annual assumptions used by Standard Monte Carlo and the comparison
+              baseline.
             </p>
           </fieldset>
 

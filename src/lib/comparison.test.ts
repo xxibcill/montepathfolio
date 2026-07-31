@@ -55,6 +55,29 @@ describe("scenario comparison copy", () => {
       "This increases exposure to bonds, which have the same expected return and same volatility in this scenario.",
     );
   });
+
+  it("distinguishes model selection from transition persistence", () => {
+    const before = createInputs({ model: "constant" });
+    const selectedHMM = createInputs({ model: "hmm" });
+    const transitionChanged = {
+      ...selectedHMM,
+      hmm: {
+        ...selectedHMM.hmm,
+        transitionMatrix: {
+          ...selectedHMM.hmm.transitionMatrix,
+          bull: { bull: 0.9, bear: 0.03, sideways: 0.07 },
+        },
+      },
+    };
+
+    expect(changedFields(before, selectedHMM)).toEqual(["model"]);
+    expect(
+      primaryChange(before, selectedHMM, changedFields(before, selectedHMM)),
+    ).toBe("Switching on regime changes");
+    expect(changedFields(selectedHMM, transitionChanged)).toEqual([
+      "regimeTransition",
+    ]);
+  });
 });
 
 function createInputs(

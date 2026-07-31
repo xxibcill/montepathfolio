@@ -5,11 +5,16 @@ import { DistributionChart } from "./components/DistributionChart";
 import { DrawdownChart } from "./components/DrawdownChart";
 import { LoadingChart } from "./components/LoadingChart";
 import { MetricStrip } from "./components/MetricStrip";
+import { ModelComparison } from "./components/ModelComparison";
 import { PathChart } from "./components/PathChart";
+import { RegimePathOverlay } from "./components/RegimePathOverlay";
+import { RegimeSnapshot } from "./components/RegimeSnapshot";
+import { RegimeTimeline } from "./components/RegimeTimeline";
 import { ScenarioControls } from "./components/ScenarioControls";
 import {
   DEFAULT_INPUTS,
   loadStoredInputs,
+  REGIME_ORDER,
   STORAGE_KEY,
 } from "./lib/defaults";
 import { useSimulation } from "./hooks/useSimulation";
@@ -21,6 +26,7 @@ function inputsMatch(a: SimulationInputs, b: SimulationInputs): boolean {
     a.monthlyContribution === b.monthlyContribution &&
     a.horizonYears === b.horizonYears &&
     a.stockAllocation === b.stockAllocation &&
+    a.model === b.model &&
     a.stocks.expectedReturn === b.stocks.expectedReturn &&
     a.stocks.volatility === b.stocks.volatility &&
     a.bonds.expectedReturn === b.bonds.expectedReturn &&
@@ -28,7 +34,27 @@ function inputsMatch(a: SimulationInputs, b: SimulationInputs): boolean {
     a.correlation === b.correlation &&
     a.rebalanceFrequency === b.rebalanceFrequency &&
     a.inflationRate === b.inflationRate &&
-    a.targetValue === b.targetValue
+    a.targetValue === b.targetValue &&
+    REGIME_ORDER.every(
+      (regime) =>
+        a.hmm.regimes[regime].stocks.expectedReturn ===
+          b.hmm.regimes[regime].stocks.expectedReturn &&
+        a.hmm.regimes[regime].stocks.volatility ===
+          b.hmm.regimes[regime].stocks.volatility &&
+        a.hmm.regimes[regime].bonds.expectedReturn ===
+          b.hmm.regimes[regime].bonds.expectedReturn &&
+        a.hmm.regimes[regime].bonds.volatility ===
+          b.hmm.regimes[regime].bonds.volatility &&
+        a.hmm.regimes[regime].correlation ===
+          b.hmm.regimes[regime].correlation &&
+        a.hmm.currentStateProbabilities[regime] ===
+          b.hmm.currentStateProbabilities[regime] &&
+        REGIME_ORDER.every(
+          (nextRegime) =>
+            a.hmm.transitionMatrix[regime][nextRegime] ===
+            b.hmm.transitionMatrix[regime][nextRegime],
+        ),
+    )
   );
 }
 
@@ -98,18 +124,18 @@ function App() {
         <main id="main-content">
           <section className="opening">
             <div className="opening__kicker">
-              <span>Monte Carlo planning lab</span>
-              <span>Two assets · monthly steps</span>
+              <span>Regime-switching planning lab</span>
+              <span>Three states · two assets · monthly steps</span>
             </div>
             <div className="opening__copy">
               <h1>
-                See the futures
+                Markets change.
                 <br />
-                <em>between</em> best and worst.
+                Your model <em>should too.</em>
               </h1>
               <p>
-                Build a stock-and-bond portfolio, then stress the assumptions.
-                The model maps what could happen—and explains the trade you made.
+                Explore what happens when persistent bull, bear, and low-growth
+                regimes replace one fixed market distribution.
               </p>
             </div>
           </section>
@@ -170,6 +196,10 @@ function App() {
                     previousResult={previousResult}
                   />
 
+                  <RegimeSnapshot result={result} />
+
+                  <RegimeTimeline />
+
                   <MetricStrip
                     result={result}
                     isRunning={status === "running"}
@@ -183,6 +213,7 @@ function App() {
                       result={result}
                       targetValue={result.inputs.targetValue}
                     />
+                    <RegimePathOverlay result={result} />
                   </section>
 
                   <div className="secondary-visuals">
@@ -211,6 +242,8 @@ function App() {
                       <DrawdownChart result={result} />
                     </section>
                   </div>
+
+                  <ModelComparison result={result} />
                 </>
               )}
             </div>
@@ -226,17 +259,16 @@ function App() {
             </div>
             <div className="methodology__copy">
               <p>
-                Each month, stock and bond values follow geometric Brownian
-                motion using your return, volatility, and correlation
-                assumptions. Contributions arrive monthly and the portfolio
-                rebalances on the schedule you choose. Drawdown uses a parallel,
-                cash-flow-neutral index so deposits cannot hide market losses.
+                Each HMM path starts from the current state probabilities, then
+                moves between bull, bear, and sideways regimes using a monthly
+                transition matrix. Every regime supplies its own stock and bond
+                return, volatility, and correlation assumptions.
               </p>
               <p>
-                Real values discount the median outcome by your inflation rate.
-                The model omits taxes, fees, fat-tailed returns, and changing
-                market regimes. Results are educational and are not financial
-                advice.
+                Gaussian emissions and geometric compounding remain simplified.
+                The model omits taxes, fees, fat tails, and retirement
+                withdrawals. Treat regimes as probabilistic scenarios—not
+                market timing, price prediction, or financial advice.
               </p>
             </div>
           </section>

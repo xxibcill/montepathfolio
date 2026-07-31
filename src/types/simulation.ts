@@ -1,8 +1,25 @@
 export type RebalanceFrequency = "monthly" | "annual" | "never";
+export type SimulationModel = "constant" | "hmm";
+export type Regime = "bull" | "bear" | "sideways";
 
 export interface AssetAssumptions {
   expectedReturn: number;
   volatility: number;
+}
+
+export interface RegimeAssumptions {
+  stocks: AssetAssumptions;
+  bonds: AssetAssumptions;
+  correlation: number;
+}
+
+export type RegimeProbabilities = Record<Regime, number>;
+export type TransitionMatrix = Record<Regime, RegimeProbabilities>;
+
+export interface HMMConfiguration {
+  regimes: Record<Regime, RegimeAssumptions>;
+  transitionMatrix: TransitionMatrix;
+  currentStateProbabilities: RegimeProbabilities;
 }
 
 export interface SimulationInputs {
@@ -10,9 +27,11 @@ export interface SimulationInputs {
   monthlyContribution: number;
   horizonYears: number;
   stockAllocation: number;
+  model: SimulationModel;
   stocks: AssetAssumptions;
   bonds: AssetAssumptions;
   correlation: number;
+  hmm: HMMConfiguration;
   rebalanceFrequency: RebalanceFrequency;
   inflationRate: number;
   targetValue: number;
@@ -39,6 +58,11 @@ export interface SimulationMetrics {
   probabilityOfUnrecoveredDrawdown: number;
   /** Mean peak-to-recovery duration across completed drawdown episodes only. */
   averageRecoveryMonths: number | null;
+  /**
+   * Mean loss versus contributed capital among the lowest 5% of ending values.
+   * A value of zero means even the tail sample finished above contributions.
+   */
+  expectedShortfall: number;
   totalContributed: number;
 }
 
@@ -51,7 +75,11 @@ export interface SimulationResult {
   drawdownPercentiles: PercentileSeries;
   terminalValues: number[];
   maxDrawdowns: number[];
+  /** Present only when the selected model is the HMM engine. */
+  sampleRegimePaths: Regime[][];
+  regimeOccupancy: RegimeProbabilities | null;
   metrics: SimulationMetrics;
+  comparisonMetrics: Record<SimulationModel, SimulationMetrics>;
   computedAt: number;
 }
 

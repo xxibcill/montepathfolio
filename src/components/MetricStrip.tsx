@@ -78,9 +78,17 @@ export function MetricStrip({ result, isRunning = false }: MetricStripProps) {
       aria-busy={isRunning}
     >
       <div className="metric-strip__heading">
-        <p className="eyebrow">Outcome snapshot</p>
+        <p className="eyebrow">
+          {result?.inputs.model === "hmm"
+            ? "HMM outcome snapshot"
+            : "Standard outcome snapshot"}
+        </p>
         <p className="metric-strip__status">
-          {isRunning ? "Updating 1,000 paths…" : "Current simulation"}
+          {isRunning
+            ? "Updating 1,000 paths…"
+            : result?.inputs.model === "hmm"
+              ? "Regime switching selected"
+              : "Constant parameters selected"}
         </p>
       </div>
 

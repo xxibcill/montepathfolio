@@ -1,6 +1,8 @@
 import type { SimulationInputs } from "../types/simulation";
+import { REGIME_ORDER } from "./defaults";
 
 export type ChangeKey =
+  | "model"
   | "initialCapital"
   | "monthlyContribution"
   | "horizonYears"
@@ -10,9 +12,11 @@ export type ChangeKey =
   | "correlation"
   | "rebalanceFrequency"
   | "inflationRate"
+  | "regimeTransition"
   | "targetValue";
 
 const CHANGE_LABELS: Record<ChangeKey, string> = {
+  model: "market model",
   initialCapital: "starting capital",
   monthlyContribution: "monthly contributions",
   horizonYears: "investment horizon",
@@ -22,6 +26,7 @@ const CHANGE_LABELS: Record<ChangeKey, string> = {
   correlation: "stock–bond correlation",
   rebalanceFrequency: "rebalancing",
   inflationRate: "inflation",
+  regimeTransition: "regime persistence",
   targetValue: "financial target",
 };
 
@@ -31,6 +36,9 @@ export function changedFields(
 ): ChangeKey[] {
   const changes: ChangeKey[] = [];
 
+  if (before.model !== after.model) {
+    changes.push("model");
+  }
   if (before.initialCapital !== after.initialCapital) {
     changes.push("initialCapital");
   }
@@ -64,6 +72,17 @@ export function changedFields(
   if (before.inflationRate !== after.inflationRate) {
     changes.push("inflationRate");
   }
+  if (
+    REGIME_ORDER.some((regime) =>
+      REGIME_ORDER.some(
+        (nextRegime) =>
+          before.hmm.transitionMatrix[regime][nextRegime] !==
+          after.hmm.transitionMatrix[regime][nextRegime],
+      ),
+    )
+  ) {
+    changes.push("regimeTransition");
+  }
   if (before.targetValue !== after.targetValue) {
     changes.push("targetValue");
   }
@@ -84,6 +103,10 @@ export function primaryChange(
   }
 
   switch (changes[0]) {
+    case "model":
+      return after.model === "hmm"
+        ? "Switching on regime changes"
+        : "Holding market assumptions constant";
     case "initialCapital":
       return `${after.initialCapital > before.initialCapital ? "Increasing" : "Reducing"} starting capital`;
     case "monthlyContribution":
@@ -104,6 +127,8 @@ export function primaryChange(
       return "Changing the rebalance schedule";
     case "inflationRate":
       return "Changing the inflation assumption";
+    case "regimeTransition":
+      return "Changing regime persistence";
     case "targetValue":
       return "Moving the financial target";
   }
@@ -121,6 +146,8 @@ export function reasonForChange(
   }
 
   switch (changes[0]) {
+    case "model":
+      return "The same shock streams now pass through a different market-state process, isolating the effect of regime switching.";
     case "initialCapital":
       return "Starting capital compounds from day one, so it affects every future path.";
     case "monthlyContribution":
@@ -141,6 +168,8 @@ export function reasonForChange(
       return "Rebalancing controls how far the portfolio can drift from its selected risk mix.";
     case "inflationRate":
       return "Inflation changes purchasing power, not the nominal paths, so the real-value estimate moves independently.";
+    case "regimeTransition":
+      return "Transition probabilities control how long favorable and adverse conditions tend to persist before the market changes state.";
     case "targetValue":
       return "The portfolio paths are unchanged; only the hurdle they must clear has moved.";
   }
