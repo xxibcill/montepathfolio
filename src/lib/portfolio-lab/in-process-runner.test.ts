@@ -133,6 +133,82 @@ describe("in-process portfolio-lab runner", () => {
     expect(wealth[2]).toBeCloseTo(1_500, 12);
   });
 
+  it("treats HMM transition matrices as per-step on native time grids", async () => {
+    const hmmCaseId = asPortfolioCaseId("native-hmm");
+    const outcome = await run({
+      ...BASE_REQUEST,
+      plan: {
+        ...BASE_REQUEST.plan,
+        initialCapital: 1_000,
+        contributionPerStep: 0,
+        targetWeights: { stocks: 1, bonds: 0 },
+      },
+      primaryCaseId: hmmCaseId,
+      cases: [
+        {
+          id: hmmCaseId,
+          label: "Native HMM",
+          model: {
+            contract: PORTFOLIO_LAB_MODEL_CONTRACT.hmm,
+            kind: "hmm",
+            regimes: {
+              bull: {
+                stocks: { annualDrift: 0, annualVolatility: 0 },
+                bonds: { annualDrift: 0, annualVolatility: 0 },
+                correlation: 0,
+              },
+              bear: {
+                stocks: {
+                  annualDrift: Math.log(4),
+                  annualVolatility: 0,
+                },
+                bonds: { annualDrift: 0, annualVolatility: 0 },
+                correlation: 0,
+              },
+              sideways: {
+                stocks: { annualDrift: 0, annualVolatility: 0 },
+                bonds: { annualDrift: 0, annualVolatility: 0 },
+                correlation: 0,
+              },
+            },
+            transitionMatrix: {
+              bull: { bull: 0, bear: 1, sideways: 0 },
+              bear: { bull: 0, bear: 1, sideways: 0 },
+              sideways: { bull: 0, bear: 0, sideways: 1 },
+            },
+            initialStateProbabilities: {
+              bull: 1,
+              bear: 0,
+              sideways: 0,
+            },
+          },
+        },
+      ],
+      execution: {
+        ...BASE_REQUEST.execution,
+        paths: 1,
+        steps: 1,
+        stepYears: 0.5,
+      },
+    });
+
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) {
+      throw new Error(outcome.problem.message);
+    }
+
+    expect(outcome.result.primary.model).toBe("hmm");
+    expect(outcome.result.primary.samples[0].wealth.values).toEqual([
+      1_000,
+      2_000,
+    ]);
+    if (outcome.result.primary.model === "hmm") {
+      expect(
+        outcome.result.primary.diagnostics.sampledStatePaths[0].states,
+      ).toEqual(["bull", "bear"]);
+    }
+  });
+
   it("rejects unsupported request and model contract versions", async () => {
     const requestContractOutcome = await run({
       ...BASE_REQUEST,
@@ -295,6 +371,84 @@ describe("in-process portfolio-lab runner", () => {
       problem: {
         code: "NUMERICAL_FAILURE",
         caseId: BASE_CASE_ID,
+      },
+    });
+  });
+
+  it("keeps aggregate means finite when every path value is finite", async () => {
+    const outcome = await run({
+      ...BASE_REQUEST,
+      plan: {
+        ...BASE_REQUEST.plan,
+        initialCapital: 1e308,
+        contributionPerStep: 0,
+      },
+      cases: [
+        {
+          ...BASE_CASE,
+          model: {
+            ...BASE_CASE.model,
+            market: {
+              stocks: { annualDrift: 0, annualVolatility: 0 },
+              bonds: { annualDrift: 0, annualVolatility: 0 },
+              correlation: 0,
+            },
+          },
+        },
+      ],
+      execution: {
+        ...BASE_REQUEST.execution,
+        paths: 4,
+        steps: 1,
+      },
+    });
+
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) {
+      throw new Error(outcome.problem.message);
+    }
+
+    expect(
+      outcome.result.primary.metrics.wealth.meanTerminalValue,
+    ).toBe(1e308);
+  });
+
+  it("classifies derived-metric overflow as a numerical failure", async () => {
+    const outcome = await run({
+      ...BASE_REQUEST,
+      plan: {
+        ...BASE_REQUEST.plan,
+        annualInflationRate: -0.5,
+      },
+      cases: [
+        {
+          ...BASE_CASE,
+          model: {
+            ...BASE_CASE.model,
+            market: {
+              stocks: { annualDrift: 0, annualVolatility: 0 },
+              bonds: { annualDrift: 0, annualVolatility: 0 },
+              correlation: 0,
+            },
+          },
+        },
+      ],
+      execution: {
+        ...BASE_REQUEST.execution,
+        paths: 1,
+        steps: 1,
+        stepYears: Number.MAX_VALUE,
+      },
+    });
+
+    expect(outcome).toMatchObject({
+      ok: false,
+      problem: {
+        code: "NUMERICAL_FAILURE",
+        caseId: BASE_CASE_ID,
+        location: {
+          quantity: "inflationFactor",
+        },
       },
     });
   });

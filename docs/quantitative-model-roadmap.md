@@ -175,6 +175,8 @@ and tests before expansion begins.
   or simply compounded.
 - Every return series states whether it contains simple or log returns.
 - Simulation time uses `stepYears`; UI labels may present days, months, or years.
+- HMM transition matrices contain one-step probabilities calibrated to
+  `stepYears`; the engine does not rescale a matrix from another frequency.
 - Price, return, variance, yield, spread, loss, and probability series are
   distinct semantic types even if all are represented by numbers.
 - Time index zero is the initial state and every result describes when cash

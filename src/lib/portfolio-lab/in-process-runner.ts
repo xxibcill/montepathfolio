@@ -12,11 +12,11 @@ import {
   type ResourceLimitProblem,
   type UnsupportedContractProblem,
 } from "./contracts";
+import { executeValidatedPortfolioLabRequestCooperatively } from "./engine";
 import {
-  executeValidatedPortfolioLabRequestCooperatively,
   PortfolioLabEngineCancelledError,
   PortfolioLabNumericalError,
-} from "./engine";
+} from "./errors";
 
 const PROBABILITY_SUM_TOLERANCE = 1e-8;
 const WEIGHT_SUM_TOLERANCE = 1e-12;
@@ -55,6 +55,13 @@ export function createInProcessPortfolioLabRunner(): PortfolioLabRunner {
       };
     },
   };
+}
+
+export function preflightPortfolioLabRequest(
+  request: unknown,
+): PortfolioLabProblem | null {
+  const validation = validateRequest(request);
+  return validation.ok ? null : validation.problem;
 }
 
 async function executeRequest(

@@ -21,6 +21,7 @@ import {
   executeValidatedPortfolioLabRequestCooperatively,
   selectPortfolioLabSampleIndexes,
 } from "./portfolio-lab/engine";
+import { preflightPortfolioLabRequest } from "./portfolio-lab/in-process-runner";
 import { REGIME_ORDER } from "./regimes";
 
 export {
@@ -39,6 +40,7 @@ export function runSimulation(rawInputs: SimulationInputs): SimulationResult {
     "constant",
     "hmm",
   ]);
+  assertPortfolioLabRequestExecutable(request);
   const result = executeValidatedPortfolioLabRequest(request);
   const selectedResult = toSimulationCaseResult(result.primary);
   const comparisonMetrics = toLegacyComparisonMetrics(result);
@@ -60,6 +62,7 @@ export async function runSimulationCase(
 ): Promise<SimulationCaseResult> {
   const { inputs, monthCount } = prepareSimulation(rawInputs);
   const request = buildPortfolioLabRequest(inputs, monthCount, [inputs.model]);
+  assertPortfolioLabRequestExecutable(request);
   const result = await executeValidatedPortfolioLabRequestCooperatively(
     request,
     signal,
@@ -70,6 +73,15 @@ export async function runSimulationCase(
 
 export const selectSimulationSampleIndexes =
   selectPortfolioLabSampleIndexes;
+
+function assertPortfolioLabRequestExecutable(
+  request: PortfolioLabRequest,
+): void {
+  const problem = preflightPortfolioLabRequest(request);
+  if (problem) {
+    throw new Error(`${problem.code}: ${problem.message}`);
+  }
+}
 
 function prepareSimulation(rawInputs: SimulationInputs): {
   readonly inputs: SimulationInputs;

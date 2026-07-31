@@ -63,6 +63,11 @@ export interface HmmModelSpec {
   readonly regimes: Readonly<
     Record<HmmRegime, TwoAssetMarketAssumptions>
   >;
+  /**
+   * Each row is a one-step transition distribution. The engine applies the
+   * matrix exactly once per `execution.stepYears` interval and does not rescale
+   * probabilities from another observation frequency.
+   */
   readonly transitionMatrix: Readonly<
     Record<HmmRegime, HmmRegimeProbabilities>
   >;
