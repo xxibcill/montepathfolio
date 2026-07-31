@@ -158,8 +158,9 @@ src/
 │   ├── defaults.ts          Default scenario and local-storage loading
 │   ├── format.ts            Display formatting
 │   ├── hmm-model.ts         Training-service payload validation and adaptation
+│   ├── portfolio-lab/       Native engine, runner, contracts, and random streams
 │   ├── regimes.ts           Transition editing and regime portfolio moments
-│   ├── simulation.ts        Monte Carlo engine and metrics
+│   ├── simulation.ts        Legacy UI compatibility adapter
 │   └── simulation.test.ts   Determinism, GBM, percentile, and risk tests
 ├── types/                   Simulation and HMM service-contract types
 ├── workers/                 Simulation Web Worker entry point

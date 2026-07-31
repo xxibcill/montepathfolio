@@ -8,9 +8,10 @@ Target: Release 0 portfolio-lab migration
 
 ## Removal trigger
 
-Remove `src/lib/portfolio-lab/legacy-runner.ts` after both runner adapters execute
-the native portfolio-lab engine and the UI no longer depends on legacy
-`SimulationInputs` or `SimulationResult` records.
+Remove the compatibility adapter in `src/lib/simulation.ts` after the production
+Web Worker uses `PortfolioLabRunner` and the UI no longer depends on legacy
+`SimulationInputs` or `SimulationResult` records. The in-process runner already
+executes the native portfolio-lab engine.
 
 ## Completion checklist
 

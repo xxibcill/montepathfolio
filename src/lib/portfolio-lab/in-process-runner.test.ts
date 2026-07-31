@@ -8,9 +8,9 @@ import {
   type PortfolioLabRequest,
 } from "./contracts";
 import {
-  LEGACY_PORTFOLIO_LAB_LIMITS,
-  createLegacyPortfolioLabRunner,
-} from "./legacy-runner";
+  PORTFOLIO_LAB_LIMITS,
+  createInProcessPortfolioLabRunner,
+} from "./in-process-runner";
 
 const BASE_CASE_ID = asPortfolioCaseId("base");
 const BASE_MARKET = {
@@ -47,9 +47,9 @@ const BASE_REQUEST = {
   },
 } as const satisfies PortfolioLabRequest;
 
-describe("legacy portfolio-lab runner", () => {
+describe("in-process portfolio-lab runner", () => {
   it("turns malformed runtime input into a structured problem", async () => {
-    const outcome = createLegacyPortfolioLabRunner().run(
+    const outcome = createInProcessPortfolioLabRunner().run(
       null as unknown as PortfolioLabRequest,
     ).outcome;
 
@@ -60,6 +60,77 @@ describe("legacy portfolio-lab runner", () => {
         code: "INVALID_REQUEST",
       },
     });
+  });
+
+  it("executes only the requested GBM case through the native engine", async () => {
+    const outcome = await run(BASE_REQUEST);
+
+    expect(outcome).toMatchObject({
+      ok: true,
+      result: {
+        primary: {
+          id: BASE_CASE_ID,
+          model: "gbm",
+        },
+        comparisons: [],
+        provenance: {
+          engineVersion: "portfolio-lab-engine@1",
+        },
+      },
+    });
+  });
+
+  it("supports native time grids and periodic rebalancing", async () => {
+    const outcome = await run({
+      ...BASE_REQUEST,
+      plan: {
+        ...BASE_REQUEST.plan,
+        initialCapital: 1_000,
+        contributionPerStep: 0,
+        targetWeights: { stocks: 0.5, bonds: 0.5 },
+        rebalance: { kind: "periodic", everySteps: 2 },
+      },
+      cases: [
+        {
+          ...BASE_CASE,
+          model: {
+            ...BASE_CASE.model,
+            market: {
+              stocks: { annualDrift: Math.log(2), annualVolatility: 0 },
+              bonds: { annualDrift: 0, annualVolatility: 0 },
+              correlation: 0,
+            },
+          },
+        },
+      ],
+      execution: {
+        ...BASE_REQUEST.execution,
+        paths: 1,
+        steps: 2,
+        stepYears: 0.5,
+      },
+    });
+
+    expect(outcome).toMatchObject({
+      ok: true,
+      result: {
+        provenance: {
+          timeGrid: {
+            steps: 2,
+            stepYears: 0.5,
+          },
+        },
+      },
+    });
+    if (!outcome.ok) {
+      throw new Error(outcome.problem.message);
+    }
+
+    const wealth = outcome.result.primary.samples[0].wealth.values;
+    expect(wealth).toHaveLength(3);
+    expect(wealth[0]).toBe(1_000);
+    expect(wealth[1]).toBeCloseTo(1_207.1067811865476, 12);
+    expect(wealth[2]).toBeCloseTo(1_500, 12);
   });
 
   it("rejects unsupported request and model contract versions", async () => {
@@ -144,7 +215,7 @@ describe("legacy portfolio-lab runner", () => {
       request: {
         ...BASE_REQUEST,
         cases: Array.from(
-          { length: LEGACY_PORTFOLIO_LAB_LIMITS.cases + 1 },
+          { length: PORTFOLIO_LAB_LIMITS.cases + 1 },
           (_, index) => ({
             ...BASE_CASE,
             id: asPortfolioCaseId(`case-${index}`),
@@ -159,7 +230,7 @@ describe("legacy portfolio-lab runner", () => {
         ...BASE_REQUEST,
         execution: {
           ...BASE_REQUEST.execution,
-          paths: LEGACY_PORTFOLIO_LAB_LIMITS.paths + 1,
+          paths: PORTFOLIO_LAB_LIMITS.paths + 1,
         },
       },
       resource: "PATHS",
@@ -170,7 +241,7 @@ describe("legacy portfolio-lab runner", () => {
         ...BASE_REQUEST,
         execution: {
           ...BASE_REQUEST.execution,
-          steps: LEGACY_PORTFOLIO_LAB_LIMITS.steps + 1,
+          steps: PORTFOLIO_LAB_LIMITS.steps + 1,
         },
       },
       resource: "STEPS",
@@ -181,8 +252,8 @@ describe("legacy portfolio-lab runner", () => {
         ...BASE_REQUEST,
         execution: {
           ...BASE_REQUEST.execution,
-          paths: LEGACY_PORTFOLIO_LAB_LIMITS.paths,
-          steps: LEGACY_PORTFOLIO_LAB_LIMITS.steps,
+          paths: PORTFOLIO_LAB_LIMITS.paths,
+          steps: PORTFOLIO_LAB_LIMITS.steps,
         },
       },
       resource: "ESTIMATED_BYTES",
@@ -229,7 +300,7 @@ describe("legacy portfolio-lab runner", () => {
   });
 
   it("cancels work after execution has started", async () => {
-    const operation = createLegacyPortfolioLabRunner().run({
+    const operation = createInProcessPortfolioLabRunner().run({
       ...BASE_REQUEST,
       execution: {
         ...BASE_REQUEST.execution,
@@ -249,7 +320,7 @@ describe("legacy portfolio-lab runner", () => {
 });
 
 async function run(request: unknown): Promise<PortfolioLabOutcome> {
-  return createLegacyPortfolioLabRunner().run(
+  return createInProcessPortfolioLabRunner().run(
     request as PortfolioLabRequest,
   ).outcome;
 }

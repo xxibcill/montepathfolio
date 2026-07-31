@@ -1,50 +1,28 @@
-import type {
-  PercentileSeries as LegacyPercentileSeries,
-  SimulationCaseResult,
-  SimulationInputs,
-  SimulationMetrics,
-} from "../../types/simulation";
-import {
-  SimulationCancelledError,
-  runSimulationCase,
-  selectSimulationSampleIndexes,
-} from "../simulation";
 import {
   PORTFOLIO_LAB_CONTRACT,
   PORTFOLIO_LAB_MODEL_CONTRACT,
   type CancelledProblem,
-  type DrawdownRatioSeries,
-  type GbmCaseDetail,
-  type GbmCaseSummary,
-  type HmmCaseDetail,
-  type HmmCaseSummary,
   type InvalidRequestProblem,
-  type MarketCase,
-  type NominalWealthSeries,
   type NumericalFailureProblem,
-  type PercentileSeries,
-  type PortfolioCaseDetail,
-  type PortfolioCaseId,
-  type PortfolioCaseSummary,
   type PortfolioLabIssue,
   type PortfolioLabOutcome,
   type PortfolioLabProblem,
   type PortfolioLabRequest,
-  type PortfolioLabResult,
   type PortfolioLabRunner,
-  type PortfolioMetrics,
   type ResourceLimitProblem,
-  type TwoAssetMarketAssumptions,
   type UnsupportedContractProblem,
 } from "./contracts";
-import { PORTFOLIO_RANDOM_STREAM_VERSION } from "./semantic-random";
+import {
+  executeValidatedPortfolioLabRequestCooperatively,
+  PortfolioLabEngineCancelledError,
+  PortfolioLabNumericalError,
+} from "./engine";
 
-const LEGACY_STEP_YEARS = 1 / 12;
 const PROBABILITY_SUM_TOLERANCE = 1e-8;
 const WEIGHT_SUM_TOLERANCE = 1e-12;
 const ESTIMATED_BYTES_PER_PATH_STEP = 48;
 
-export const LEGACY_PORTFOLIO_LAB_LIMITS = {
+export const PORTFOLIO_LAB_LIMITS = {
   cases: 16,
   paths: 10_000,
   steps: 1_200,
@@ -58,20 +36,7 @@ type RequestValidation =
   | { readonly ok: true; readonly request: PortfolioLabRequest }
   | { readonly ok: false; readonly problem: PortfolioLabProblem };
 
-interface LegacyCaseAdapter {
-  toLegacyInputs(request: PortfolioLabRequest): SimulationInputs;
-  toSummary(result: SimulationCaseResult): PortfolioCaseSummary;
-  toDetail(
-    result: SimulationCaseResult,
-    selectedPathIndexes: readonly number[],
-  ): PortfolioCaseDetail;
-}
-
-/**
- * Temporary Release 0 adapter. Removal is tracked in
- * `docs/legacy-portfolio-lab-adapter-removal.md`.
- */
-export function createLegacyPortfolioLabRunner(): PortfolioLabRunner {
+export function createInProcessPortfolioLabRunner(): PortfolioLabRunner {
   return {
     run(request) {
       const abortController = new AbortController();
@@ -112,58 +77,21 @@ async function executeValidatedRequest(
   request: PortfolioLabRequest,
   signal: AbortSignal,
 ): Promise<PortfolioLabOutcome> {
-  const selectedPathIndexes = selectSimulationSampleIndexes(
-    request.execution.paths,
-  );
-  const comparisons: PortfolioCaseSummary[] = [];
-  let primary: PortfolioCaseDetail | undefined;
-
-  for (const requestCase of request.cases) {
-    if (signal.aborted) {
+  try {
+    const result = await executeValidatedPortfolioLabRequestCooperatively(
+      request,
+      signal,
+    );
+    return { ok: true, result };
+  } catch (error) {
+    if (error instanceof PortfolioLabEngineCancelledError || signal.aborted) {
       return { ok: false, problem: cancelledProblem() };
     }
-
-    const adapter = createLegacyCaseAdapter(requestCase);
-    try {
-      const result = await runSimulationCase(
-        adapter.toLegacyInputs(request),
-        signal,
-      );
-
-      if (requestCase.id === request.primaryCaseId) {
-        primary = adapter.toDetail(result, selectedPathIndexes);
-      } else {
-        comparisons.push(adapter.toSummary(result));
-      }
-    } catch (error) {
-      if (error instanceof SimulationCancelledError || signal.aborted) {
-        return { ok: false, problem: cancelledProblem() };
-      }
-
-      return {
-        ok: false,
-        problem: numericalFailureProblem(requestCase.id, error),
-      };
+    if (error instanceof PortfolioLabNumericalError) {
+      return { ok: false, problem: numericalFailureProblem(error) };
     }
+    throw error;
   }
-
-  if (!primary) {
-    return {
-      ok: false,
-      problem: invalidRequestProblem([
-        issue(
-          "INVALID_REFERENCE",
-          ["primaryCaseId"],
-          "The primary case ID must reference a case.",
-        ),
-      ]),
-    };
-  }
-
-  return {
-    ok: true,
-    result: buildResult(request, primary, comparisons, selectedPathIndexes),
-  };
 }
 
 function validateRequest(value: unknown): RequestValidation {
@@ -188,11 +116,11 @@ function validateRequest(value: unknown): RequestValidation {
     ]);
   }
 
-  if (value.cases.length > LEGACY_PORTFOLIO_LAB_LIMITS.cases) {
+  if (value.cases.length > PORTFOLIO_LAB_LIMITS.cases) {
     return resourceValidation(
       "CASES",
       value.cases.length,
-      LEGACY_PORTFOLIO_LAB_LIMITS.cases,
+      PORTFOLIO_LAB_LIMITS.cases,
     );
   }
 
@@ -375,7 +303,7 @@ function validateModel(
     issue(
       "UNSUPPORTED_MODEL",
       [...path, "kind"],
-      "The legacy adapter supports GBM and HMM models only.",
+      "The portfolio-lab engine supports GBM and HMM models only.",
     ),
   );
 }
@@ -604,19 +532,7 @@ function validateRebalance(
     return;
   }
 
-  if (
-    validatePositiveInteger(value.everySteps, [...path, "everySteps"], issues) &&
-    value.everySteps !== 1 &&
-    value.everySteps !== 12
-  ) {
-    issues.push(
-      issue(
-        "OUT_OF_RANGE",
-        [...path, "everySteps"],
-        "The legacy adapter supports one-step or twelve-step rebalancing.",
-      ),
-    );
-  }
+  validatePositiveInteger(value.everySteps, [...path, "everySteps"], issues);
 }
 
 function validateExecution(
@@ -634,13 +550,13 @@ function validateExecution(
   validatePositiveInteger(value.steps, [...path, "steps"], issues);
   if (
     validateFiniteNumber(value.stepYears, [...path, "stepYears"], issues) &&
-    Math.abs((value.stepYears as number) - LEGACY_STEP_YEARS) > 1e-12
+    (value.stepYears as number) <= 0
   ) {
     issues.push(
       issue(
         "OUT_OF_RANGE",
         [...path, "stepYears"],
-        "The legacy adapter supports monthly time steps only.",
+        "The time-step length must be positive.",
       ),
     );
   }
@@ -754,28 +670,28 @@ function executionResourceProblem(
   paths: number,
   steps: number,
 ): ResourceLimitProblem | null {
-  if (paths > LEGACY_PORTFOLIO_LAB_LIMITS.paths) {
+  if (paths > PORTFOLIO_LAB_LIMITS.paths) {
     return resourceLimitProblem(
       "PATHS",
       paths,
-      LEGACY_PORTFOLIO_LAB_LIMITS.paths,
+      PORTFOLIO_LAB_LIMITS.paths,
     );
   }
 
-  if (steps > LEGACY_PORTFOLIO_LAB_LIMITS.steps) {
+  if (steps > PORTFOLIO_LAB_LIMITS.steps) {
     return resourceLimitProblem(
       "STEPS",
       steps,
-      LEGACY_PORTFOLIO_LAB_LIMITS.steps,
+      PORTFOLIO_LAB_LIMITS.steps,
     );
   }
 
   const estimatedBytes = estimateWorkingBytes(paths, steps);
-  if (estimatedBytes > LEGACY_PORTFOLIO_LAB_LIMITS.estimatedBytes) {
+  if (estimatedBytes > PORTFOLIO_LAB_LIMITS.estimatedBytes) {
     return resourceLimitProblem(
       "ESTIMATED_BYTES",
       estimatedBytes,
-      LEGACY_PORTFOLIO_LAB_LIMITS.estimatedBytes,
+      PORTFOLIO_LAB_LIMITS.estimatedBytes,
     );
   }
 
@@ -865,7 +781,7 @@ function resourceLimitProblem(
   return {
     contract: PORTFOLIO_LAB_CONTRACT.problem,
     code: "RESOURCE_LIMIT",
-    message: `The requested ${resource.toLowerCase()} exceeds the legacy adapter limit.`,
+    message: `The requested ${resource.toLowerCase()} exceeds the portfolio-lab limit.`,
     resource,
     requested,
     limit,
@@ -873,17 +789,14 @@ function resourceLimitProblem(
 }
 
 function numericalFailureProblem(
-  caseId: PortfolioCaseId,
-  error: unknown,
+  error: PortfolioLabNumericalError,
 ): NumericalFailureProblem {
   return {
     contract: PORTFOLIO_LAB_CONTRACT.problem,
     code: "NUMERICAL_FAILURE",
-    message:
-      error instanceof Error
-        ? error.message
-        : "The simulation produced an invalid numerical result.",
-    caseId,
+    message: error.message,
+    caseId: error.caseId,
+    ...(error.location ? { location: error.location } : {}),
   };
 }
 
@@ -896,7 +809,7 @@ function cancelledProblem(): CancelledProblem {
 }
 
 function unexpectedRunnerProblem(error: unknown): PortfolioLabProblem {
-  if (error instanceof SimulationCancelledError) {
+  if (error instanceof PortfolioLabEngineCancelledError) {
     return cancelledProblem();
   }
 
@@ -909,261 +822,6 @@ function unexpectedRunnerProblem(error: unknown): PortfolioLabProblem {
         : "The portfolio-lab request could not be executed.",
     ),
   ]);
-}
-
-function createLegacyCaseAdapter(
-  requestCase: MarketCase,
-): LegacyCaseAdapter {
-  const { model } = requestCase;
-  if (model.kind === "gbm") {
-    const market = toLegacyMarket(model.market);
-    const hmm = fixedLegacyHmm(market);
-
-    return {
-      toLegacyInputs: (request) =>
-        buildLegacyInputs(request, "constant", market, hmm),
-      toSummary: (result) =>
-        ({
-          ...summaryFields(requestCase, result),
-          model: "gbm",
-          modelContract: model.contract,
-        }) satisfies GbmCaseSummary,
-      toDetail: (result, selectedPathIndexes) =>
-        ({
-          ...detailFields(
-            requestCase,
-            result,
-            selectedPathIndexes,
-          ),
-          model: "gbm",
-          modelContract: model.contract,
-          diagnostics: {
-            contract: PORTFOLIO_LAB_CONTRACT.gbmDiagnostics,
-            kind: "gbm",
-          },
-        }) satisfies GbmCaseDetail,
-    };
-  }
-
-  const referenceMarket = toLegacyMarket(model.regimes.bull);
-  const hmm: SimulationInputs["hmm"] = {
-    regimes: {
-      bull: toLegacyMarket(model.regimes.bull),
-      bear: toLegacyMarket(model.regimes.bear),
-      sideways: toLegacyMarket(model.regimes.sideways),
-    },
-    transitionMatrix: model.transitionMatrix,
-    currentStateProbabilities: model.initialStateProbabilities,
-  };
-
-  return {
-    toLegacyInputs: (request) =>
-      buildLegacyInputs(request, "hmm", referenceMarket, hmm),
-    toSummary: (result) =>
-      ({
-        ...summaryFields(requestCase, result),
-        model: "hmm",
-        modelContract: model.contract,
-      }) satisfies HmmCaseSummary,
-    toDetail: (result, selectedPathIndexes) => {
-      if (!result.regimeOccupancy) {
-        throw new Error("The legacy HMM result is missing regime diagnostics.");
-      }
-
-      return {
-        ...detailFields(requestCase, result, selectedPathIndexes),
-        model: "hmm",
-        modelContract: model.contract,
-        diagnostics: {
-          contract: PORTFOLIO_LAB_CONTRACT.hmmDiagnostics,
-          kind: "hmm",
-          regimeOccupancy: result.regimeOccupancy,
-          sampledStatePaths: result.sampleRegimePaths.map(
-            (states, sampleIndex) => ({
-              pathIndex: selectedPathIndexes[sampleIndex],
-              states,
-            }),
-          ),
-        },
-      } satisfies HmmCaseDetail;
-    },
-  };
-}
-
-function buildLegacyInputs(
-  request: PortfolioLabRequest,
-  model: SimulationInputs["model"],
-  market: SimulationInputs["hmm"]["regimes"]["bull"],
-  hmm: SimulationInputs["hmm"],
-): SimulationInputs {
-  return {
-    initialCapital: request.plan.initialCapital,
-    monthlyContribution: request.plan.contributionPerStep,
-    horizonYears: request.execution.steps * request.execution.stepYears,
-    stockAllocation: request.plan.targetWeights.stocks,
-    model,
-    stocks: market.stocks,
-    bonds: market.bonds,
-    correlation: market.correlation,
-    hmm,
-    rebalanceFrequency: toLegacyRebalance(request.plan.rebalance),
-    inflationRate: request.plan.annualInflationRate,
-    targetValue: request.plan.targetValue,
-    pathCount: request.execution.paths,
-    seed: request.execution.seed,
-  };
-}
-
-function toLegacyMarket(
-  market: TwoAssetMarketAssumptions,
-): SimulationInputs["hmm"]["regimes"]["bull"] {
-  return {
-    stocks: {
-      expectedReturn: market.stocks.annualDrift,
-      volatility: market.stocks.annualVolatility,
-    },
-    bonds: {
-      expectedReturn: market.bonds.annualDrift,
-      volatility: market.bonds.annualVolatility,
-    },
-    correlation: market.correlation,
-  };
-}
-
-function fixedLegacyHmm(
-  market: SimulationInputs["hmm"]["regimes"]["bull"],
-): SimulationInputs["hmm"] {
-  return {
-    regimes: { bull: market, bear: market, sideways: market },
-    transitionMatrix: {
-      bull: { bull: 1, bear: 0, sideways: 0 },
-      bear: { bull: 0, bear: 1, sideways: 0 },
-      sideways: { bull: 0, bear: 0, sideways: 1 },
-    },
-    currentStateProbabilities: { bull: 1, bear: 0, sideways: 0 },
-  };
-}
-
-function toLegacyRebalance(
-  rebalance: PortfolioLabRequest["plan"]["rebalance"],
-): SimulationInputs["rebalanceFrequency"] {
-  if (rebalance.kind === "never") {
-    return "never";
-  }
-
-  return rebalance.everySteps === 1 ? "monthly" : "annual";
-}
-
-function summaryFields(
-  requestCase: MarketCase,
-  result: SimulationCaseResult,
-) {
-  return {
-    id: requestCase.id,
-    label: requestCase.label,
-    metrics: toMetrics(result.metrics),
-  };
-}
-
-function detailFields(
-  requestCase: MarketCase,
-  result: SimulationCaseResult,
-  selectedPathIndexes: readonly number[],
-) {
-  return {
-    ...summaryFields(requestCase, result),
-    samples: result.samplePaths.map((wealth, sampleIndex) => ({
-      pathIndex: selectedPathIndexes[sampleIndex],
-      wealth: nominalWealth(wealth),
-      drawdown: drawdownRatios(result.sampleDrawdownPaths[sampleIndex]),
-    })),
-    distribution: {
-      terminalWealth: nominalWealth(result.terminalValues),
-      maximumDrawdowns: drawdownRatios(result.maxDrawdowns),
-      wealthPercentiles: mapPercentiles(result.pathPercentiles, nominalWealth),
-      drawdownPercentiles: mapPercentiles(
-        result.drawdownPercentiles,
-        drawdownRatios,
-      ),
-    },
-  };
-}
-
-function buildResult(
-  request: PortfolioLabRequest,
-  primary: PortfolioCaseDetail,
-  comparisons: readonly PortfolioCaseSummary[],
-  selectedPathIndexes: readonly number[],
-): PortfolioLabResult {
-  return {
-    contract: PORTFOLIO_LAB_CONTRACT.result,
-    primary,
-    comparisons,
-    warnings: [],
-    provenance: {
-      contract: PORTFOLIO_LAB_CONTRACT.provenance,
-      requestContract: request.contract,
-      engineVersion: "legacy-portfolio-simulation@1",
-      randomStreamVersion: PORTFOLIO_RANDOM_STREAM_VERSION,
-      eventOrderVersion: "market-cashflow-rebalance-record@1",
-      quantileMethod: "linear-r7",
-      seed: request.execution.seed,
-      timeGrid: {
-        steps: request.execution.steps,
-        stepYears: request.execution.stepYears,
-      },
-      selectedPathIndexes,
-    },
-  };
-}
-
-function toMetrics(metrics: SimulationMetrics): PortfolioMetrics {
-  return {
-    wealth: {
-      medianTerminalValue: metrics.medianTerminalValue,
-      meanTerminalValue: metrics.meanTerminalValue,
-      medianRealTerminalValue: metrics.medianRealValue,
-      totalContributed: metrics.totalContributed,
-    },
-    goal: {
-      probabilityOfTarget: metrics.probabilityOfTarget,
-      averageShortfallRatio: metrics.averageTargetShortfall,
-    },
-    loss: {
-      probabilityBelowContributions: metrics.probabilityOfLoss,
-      tailCapitalShortfall: metrics.expectedShortfall,
-    },
-    drawdown: {
-      medianMaximumDrawdown: metrics.medianMaxDrawdown,
-      probabilityOverThirtyPercent:
-        metrics.probabilityOfThirtyPercentDrawdown,
-      probabilityUnrecovered: metrics.probabilityOfUnrecoveredDrawdown,
-      averageCompletedRecoverySteps: metrics.averageRecoveryMonths,
-    },
-  };
-}
-
-function nominalWealth(values: readonly number[]): NominalWealthSeries {
-  return { kind: "nominal-wealth", values };
-}
-
-function drawdownRatios(values: readonly number[]): DrawdownRatioSeries {
-  return { kind: "drawdown-ratio", values };
-}
-
-function mapPercentiles<
-  Series extends NominalWealthSeries | DrawdownRatioSeries,
->(
-  percentiles: LegacyPercentileSeries,
-  wrap: (values: readonly number[]) => Series,
-): PercentileSeries<Series> {
-  return {
-    p05: wrap(percentiles.p05),
-    p10: wrap(percentiles.p10),
-    p50: wrap(percentiles.p50),
-    p90: wrap(percentiles.p90),
-    p95: wrap(percentiles.p95),
-  };
 }
 
 function isRecord(value: unknown): value is UnknownRecord {

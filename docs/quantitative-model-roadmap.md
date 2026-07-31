@@ -29,18 +29,20 @@ labels suggest.
 
 | Capability | Current state | Roadmap treatment |
 | --- | --- | --- |
-| Geometric Brownian motion | Implemented as the `constant` two-asset monthly model | Rename internally to `gbm`, extract, and validate rather than reimplement |
-| Hidden Markov regimes | Implemented for bull, bear, and sideways Gaussian emissions | Preserve and move behind the portfolio-lab interface |
+| Geometric Brownian motion | Native portfolio-lab case with two-asset Gaussian diffusion | Preserve and validate rather than reimplement |
+| Hidden Markov regimes | Native portfolio-lab case for bull, bear, and sideways Gaussian emissions | Preserve behind the portfolio-lab interface |
 | Correlated stock and bond shocks | Implemented with two Gaussian streams | Generalize only when a multi-asset model needs it |
 | Portfolio accounting | Contributions, stock/bond allocation, and rebalancing exist | Separate from market dynamics and later extend to withdrawals and policies |
 | Risk summaries | Terminal values, drawdowns, recovery, target probability, and a tail capital-shortfall measure exist | Preserve, group by meaning, and correct terminology before adding VaR/CVaR |
 | Reproducibility | Versioned semantic streams provide shared shocks, isolated roles, and stable horizon prefixes | Preserve these behaviors as interface invariants |
 | Execution | Pure TypeScript runs in a browser Web Worker | Retain worker execution and add an in-process test adapter |
 
-The current `SimulationInputs` and `SimulationResult` types should not be widened
-for every future model. They already carry unused HMM configuration for the GBM
+The compatibility `SimulationInputs` and `SimulationResult` types must not be
+widened for future models. They still carry unused HMM configuration for the GBM
 case, hard-code two comparison keys, and expose HMM-only data through nullable or
-empty common fields. `runSimulation` also computes both models on every run.
+empty common fields. The compatibility `runSimulation` adapter explicitly
+requests both current cases for the UI; native portfolio-lab callers execute only
+the cases they request.
 
 ## 3. Architecture decision
 
