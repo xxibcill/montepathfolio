@@ -1,6 +1,18 @@
 import { useEffect, useMemo, useRef } from "react";
-import type { SimulationResult } from "../types/simulation";
 import { useCanvasSize } from "../hooks/useCanvasSize";
+import {
+  appendSeriesPath,
+  CHART_COLORS as COLORS,
+  compactCurrency,
+  drawBandLegend,
+  drawLineLegend,
+  fillBand,
+  formatProbability,
+  fullCurrency,
+  niceCeiling,
+  strokeSeries,
+} from "../lib/chart";
+import type { SimulationResult } from "../types/simulation";
 
 type ValueMode = "nominal" | "real";
 
@@ -9,125 +21,6 @@ export interface PathChartProps {
   targetValue?: number;
   valueMode?: ValueMode;
   className?: string;
-}
-
-const COLORS = {
-  paper: "#fbf7ef",
-  ink: "#29332d",
-  mutedInk: "#68736b",
-  grid: "#ded9ce",
-  forest: "#376c4d",
-  path: "rgba(45, 67, 54, 0.085)",
-  outerBand: "rgba(55, 108, 77, 0.11)",
-  innerBand: "rgba(55, 108, 77, 0.22)",
-  vermilion: "#a94734",
-};
-
-const compactCurrency = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-  notation: "compact",
-  maximumFractionDigits: 1,
-});
-
-const fullCurrency = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-  maximumFractionDigits: 0,
-});
-
-function niceCeiling(value: number, tickCount = 4) {
-  if (!Number.isFinite(value) || value <= 0) {
-    return 1;
-  }
-
-  const roughStep = value / tickCount;
-  const magnitude = 10 ** Math.floor(Math.log10(roughStep));
-  const normalized = roughStep / magnitude;
-  const niceFactor =
-    normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
-  const step = niceFactor * magnitude;
-
-  return Math.ceil(value / step) * step;
-}
-
-function formatProbability(value: number) {
-  const probability = Math.max(0, Math.min(1, value));
-  return `${Math.round(probability * 100)}%`;
-}
-
-function drawSeries(
-  context: CanvasRenderingContext2D,
-  values: number[],
-  count: number,
-  xForIndex: (index: number) => number,
-  yForValue: (value: number, index: number) => number,
-) {
-  if (count === 0) {
-    return;
-  }
-
-  context.moveTo(xForIndex(0), yForValue(values[0] ?? 0, 0));
-  for (let index = 1; index < count; index += 1) {
-    context.lineTo(
-      xForIndex(index),
-      yForValue(values[index] ?? 0, index),
-    );
-  }
-}
-
-function fillBand(
-  context: CanvasRenderingContext2D,
-  lower: number[],
-  upper: number[],
-  count: number,
-  xForIndex: (index: number) => number,
-  yForValue: (value: number, index: number) => number,
-  fillStyle: string,
-) {
-  if (count === 0) {
-    return;
-  }
-
-  context.beginPath();
-  context.moveTo(xForIndex(0), yForValue(upper[0] ?? 0, 0));
-
-  for (let index = 1; index < count; index += 1) {
-    context.lineTo(
-      xForIndex(index),
-      yForValue(upper[index] ?? 0, index),
-    );
-  }
-
-  for (let index = count - 1; index >= 0; index -= 1) {
-    context.lineTo(
-      xForIndex(index),
-      yForValue(lower[index] ?? 0, index),
-    );
-  }
-
-  context.closePath();
-  context.fillStyle = fillStyle;
-  context.fill();
-}
-
-function strokeSeries(
-  context: CanvasRenderingContext2D,
-  values: number[],
-  count: number,
-  xForIndex: (index: number) => number,
-  yForValue: (value: number, index: number) => number,
-  color: string,
-  width: number,
-  dash: number[] = [],
-) {
-  context.beginPath();
-  drawSeries(context, values, count, xForIndex, yForValue);
-  context.strokeStyle = color;
-  context.lineWidth = width;
-  context.setLineDash(dash);
-  context.stroke();
-  context.setLineDash([]);
 }
 
 export function PathChart({
@@ -307,61 +200,61 @@ export function PathChart({
         continue;
       }
       const pathCount = Math.min(count, path.length);
-      drawSeries(context, path, pathCount, xForIndex, yForValue);
+      appendSeriesPath(context, {
+        values: path,
+        count: pathCount,
+        xForIndex,
+        yForValue,
+      });
     }
     context.strokeStyle = COLORS.path;
     context.lineWidth = 0.65;
     context.stroke();
 
-    fillBand(
-      context,
-      series.p05,
-      series.p95,
+    fillBand(context, {
+      lower: series.p05,
+      upper: series.p95,
       count,
       xForIndex,
       yForValue,
-      COLORS.outerBand,
-    );
-    fillBand(
-      context,
-      series.p10,
-      series.p90,
+      fillStyle: COLORS.outerBand,
+    });
+    fillBand(context, {
+      lower: series.p10,
+      upper: series.p90,
       count,
       xForIndex,
       yForValue,
-      COLORS.innerBand,
-    );
+      fillStyle: COLORS.innerBand,
+    });
 
     // Dotted decile boundaries remain identifiable in monochrome.
-    strokeSeries(
-      context,
-      series.p10,
+    strokeSeries(context, {
+      values: series.p10,
       count,
       xForIndex,
       yForValue,
-      "rgba(41, 51, 45, 0.48)",
-      0.9,
-      [2, 4],
-    );
-    strokeSeries(
-      context,
-      series.p90,
+      color: COLORS.percentileLine,
+      width: 0.9,
+      dash: [2, 4],
+    });
+    strokeSeries(context, {
+      values: series.p90,
       count,
       xForIndex,
       yForValue,
-      "rgba(41, 51, 45, 0.48)",
-      0.9,
-      [2, 4],
-    );
-    strokeSeries(
-      context,
-      series.p50,
+      color: COLORS.percentileLine,
+      width: 0.9,
+      dash: [2, 4],
+    });
+    strokeSeries(context, {
+      values: series.p50,
       count,
       xForIndex,
       yForValue,
-      COLORS.forest,
-      2.4,
-    );
+      color: COLORS.forest,
+      width: 2.4,
+    });
 
     if (Number.isFinite(target) && target >= 0) {
       const targetY = targetBeyondScale
@@ -420,61 +313,58 @@ export function PathChart({
     context.textAlign = "left";
     context.textBaseline = "middle";
 
-    const drawBandLegend = (
-      x: number,
-      y: number,
-      fill: string,
-      label: string,
-    ) => {
-      context.fillStyle = fill;
-      context.fillRect(x, y - 5, 18, 10);
-      context.strokeStyle = "rgba(41, 51, 45, 0.42)";
-      context.lineWidth = 0.8;
-      context.strokeRect(x, y - 5, 18, 10);
-      context.fillStyle = COLORS.ink;
-      context.fillText(label, x + 24, y);
-    };
-    const drawLineLegend = (
-      x: number,
-      y: number,
-      color: string,
-      label: string,
-      dash: number[] = [],
-    ) => {
-      context.beginPath();
-      context.moveTo(x, y);
-      context.lineTo(x + 20, y);
-      context.setLineDash(dash);
-      context.strokeStyle = color;
-      context.lineWidth = 2;
-      context.stroke();
-      context.setLineDash([]);
-      context.fillStyle = COLORS.ink;
-      context.fillText(label, x + 26, y);
-    };
-
     if (compactLayout) {
-      drawBandLegend(plotLeft, legendY, COLORS.outerBand, "5–95%");
-      drawBandLegend(plotLeft + 95, legendY, COLORS.innerBand, "10–90%");
-      drawLineLegend(plotLeft, secondLegendY, COLORS.forest, "Median");
-      drawLineLegend(
-        plotLeft + 95,
-        secondLegendY,
-        COLORS.vermilion,
-        targetBeyondScale ? "Target ↑" : "Target",
-        [6, 4],
-      );
+      drawBandLegend(context, {
+        x: plotLeft,
+        y: legendY,
+        fill: COLORS.outerBand,
+        label: "5–95%",
+      });
+      drawBandLegend(context, {
+        x: plotLeft + 95,
+        y: legendY,
+        fill: COLORS.innerBand,
+        label: "10–90%",
+      });
+      drawLineLegend(context, {
+        x: plotLeft,
+        y: secondLegendY,
+        color: COLORS.forest,
+        label: "Median",
+      });
+      drawLineLegend(context, {
+        x: plotLeft + 95,
+        y: secondLegendY,
+        color: COLORS.vermilion,
+        label: targetBeyondScale ? "Target ↑" : "Target",
+        dash: [6, 4],
+      });
     } else {
-      drawBandLegend(plotLeft, legendY, COLORS.outerBand, "5–95%");
-      drawBandLegend(plotLeft + 100, legendY, COLORS.innerBand, "10–90%");
-      drawLineLegend(plotLeft + 208, legendY, COLORS.forest, "Median");
-      drawLineLegend(
-        plotLeft + 305,
-        legendY,
-        COLORS.vermilion,
-        targetBeyondScale ? "Target ↑" : "Target",
-        [6, 4],
-      );
+      drawBandLegend(context, {
+        x: plotLeft,
+        y: legendY,
+        fill: COLORS.outerBand,
+        label: "5–95%",
+      });
+      drawBandLegend(context, {
+        x: plotLeft + 100,
+        y: legendY,
+        fill: COLORS.innerBand,
+        label: "10–90%",
+      });
+      drawLineLegend(context, {
+        x: plotLeft + 208,
+        y: legendY,
+        color: COLORS.forest,
+        label: "Median",
+      });
+      drawLineLegend(context, {
+        x: plotLeft + 305,
+        y: legendY,
+        color: COLORS.vermilion,
+        label: targetBeyondScale ? "Target ↑" : "Target",
+        dash: [6, 4],
+      });
     }
   }, [dpr, height, result, target, valueMode, width]);
 

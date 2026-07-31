@@ -165,6 +165,11 @@ function App() {
                     </p>
                   </section>
 
+                  <ComparisonNote
+                    result={result}
+                    previousResult={previousResult}
+                  />
+
                   <MetricStrip
                     result={result}
                     isRunning={status === "running"}
@@ -179,11 +184,6 @@ function App() {
                       targetValue={result.inputs.targetValue}
                     />
                   </section>
-
-                  <ComparisonNote
-                    result={result}
-                    previousResult={previousResult}
-                  />
 
                   <div className="secondary-visuals">
                     <section className="secondary-visual">

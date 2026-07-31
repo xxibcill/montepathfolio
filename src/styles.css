@@ -427,6 +427,77 @@ a {
   letter-spacing: -0.02em;
 }
 
+.assumptions-disclosure {
+  margin: 0;
+}
+
+.assumptions-disclosure > summary {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-2) var(--space-4);
+  align-items: center;
+  padding-right: 2rem;
+  color: var(--ink);
+  cursor: pointer;
+  list-style: none;
+}
+
+.assumptions-disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+
+.assumptions-disclosure > summary::after {
+  content: "+";
+  position: absolute;
+  top: 50%;
+  right: 0;
+  display: grid;
+  width: 1.45rem;
+  height: 1.45rem;
+  place-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  color: var(--forest-dark);
+  font-size: 1rem;
+  font-weight: 500;
+  line-height: 1;
+  transform: translateY(-50%);
+  transition:
+    border-color 140ms var(--ease-toggle),
+    color 140ms var(--ease-toggle),
+    transform 180ms var(--ease-out);
+}
+
+.assumptions-disclosure > summary:hover::after {
+  border-color: var(--forest);
+  color: var(--forest);
+}
+
+.assumptions-disclosure[open] > summary::after {
+  transform: translateY(-50%) rotate(45deg);
+}
+
+.assumptions-disclosure > summary > span {
+  font-family: var(--font-display);
+  font-size: 1.17rem;
+  font-weight: 570;
+  letter-spacing: -0.02em;
+}
+
+.assumptions-disclosure > summary > small {
+  grid-column: 1;
+  color: var(--ink-faint);
+  font-size: 0.69rem;
+  line-height: 1.4;
+}
+
+.assumptions-disclosure__content {
+  display: grid;
+  gap: var(--space-8);
+  padding-top: var(--space-8);
+}
+
 .scenario-controls__grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -898,7 +969,7 @@ a {
   display: grid;
   grid-template-columns: clamp(3rem, 6vw, 5.5rem) minmax(0, 1fr);
   gap: clamp(var(--space-4), 3vw, var(--space-8));
-  margin-block: clamp(var(--space-12), 6vw, var(--space-24));
+  margin: 0 0 clamp(var(--space-12), 6vw, var(--space-24));
   padding-block: clamp(var(--space-8), 4vw, var(--space-12));
   border-block: 1px solid var(--ink);
 }

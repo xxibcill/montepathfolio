@@ -1,5 +1,5 @@
-import { useState } from "react";
-import type { CSSProperties, ChangeEvent, KeyboardEvent } from "react";
+import type { CSSProperties } from "react";
+import { useNumberDraft } from "../hooks/useNumberDraft";
 import type {
   AssetAssumptions,
   RebalanceFrequency,
@@ -33,10 +33,6 @@ interface NumberControlProps {
   suffix?: string;
 }
 
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
-}
-
 function toPercentInput(value: number): number {
   return Math.round(value * 1_000) / 10;
 }
@@ -54,60 +50,15 @@ function NumberControl({
   suffix,
 }: NumberControlProps) {
   const hintId = hint ? `${id}-hint` : undefined;
-  const [draft, setDraft] = useState<string | null>(null);
   const acceptsNegative = min < 0;
-  const displayedValue = draft ?? String(value);
-  const parsedDisplayedValue = Number(displayedValue);
-
-  function handleChange(event: ChangeEvent<HTMLInputElement>) {
-    const nextDraft = event.currentTarget.value;
-    const nextValue = Number(nextDraft);
-    setDraft(nextDraft);
-
-    if (
-      nextDraft.trim() !== "" &&
-      Number.isFinite(nextValue) &&
-      nextValue >= min &&
-      nextValue <= max
-    ) {
-      onValueChange(nextValue);
-    }
-  }
-
-  function commitDraft() {
-    const currentDraft = draft ?? String(value);
-    const nextValue = Number(currentDraft);
-    setDraft(null);
-
-    if (currentDraft.trim() === "" || !Number.isFinite(nextValue)) {
-      return;
-    }
-
-    const committedValue = clamp(nextValue, min, max);
-    onValueChange(committedValue);
-  }
-
-  function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
-    if (
-      acceptsNegative &&
-      (event.key === "ArrowUp" || event.key === "ArrowDown") &&
-      Number.isFinite(parsedDisplayedValue)
-    ) {
-      event.preventDefault();
-      const nextValue = clamp(
-        parsedDisplayedValue + (event.key === "ArrowUp" ? step : -step),
-        min,
-        max,
-      );
-      setDraft(String(nextValue));
-      onValueChange(nextValue);
-    } else if (event.key === "Enter") {
-      event.currentTarget.blur();
-    } else if (event.key === "Escape") {
-      setDraft(null);
-      event.currentTarget.blur();
-    }
-  }
+  const numberDraft = useNumberDraft({
+    value,
+    min,
+    max,
+    step,
+    onValueChange,
+    handleArrowKeys: acceptsNegative,
+  });
 
   return (
     <div className="control">
@@ -130,21 +81,21 @@ function NumberControl({
           min={min}
           max={max}
           step={step}
-          value={displayedValue}
+          value={numberDraft.displayedValue}
           aria-valuemin={acceptsNegative ? min : undefined}
           aria-valuemax={acceptsNegative ? max : undefined}
           aria-valuenow={
             acceptsNegative &&
-            displayedValue.trim() !== "" &&
-            Number.isFinite(parsedDisplayedValue)
-              ? parsedDisplayedValue
+            numberDraft.displayedValue.trim() !== "" &&
+            Number.isFinite(numberDraft.parsedValue)
+              ? numberDraft.parsedValue
               : undefined
           }
           aria-describedby={hintId}
-          onFocus={() => setDraft(String(value))}
-          onChange={handleChange}
-          onBlur={commitDraft}
-          onKeyDown={handleKeyDown}
+          onFocus={numberDraft.handleFocus}
+          onChange={numberDraft.handleChange}
+          onBlur={numberDraft.handleBlur}
+          onKeyDown={numberDraft.handleKeyDown}
         />
         {suffix ? (
           <span className="control__affix control__affix--suffix">
@@ -215,58 +166,14 @@ interface CorrelationEditorProps {
 function CorrelationEditor({ value, onChange }: CorrelationEditorProps) {
   const inputId = "stock-bond-correlation";
   const hintId = `${inputId}-hint`;
-  const [draft, setDraft] = useState<string | null>(null);
-  const displayedValue = draft ?? String(value);
-  const parsedDisplayedValue = Number(displayedValue);
-
-  function handleChange(event: ChangeEvent<HTMLInputElement>) {
-    const nextDraft = event.currentTarget.value;
-    const nextValue = Number(nextDraft);
-    setDraft(nextDraft);
-
-    if (
-      nextDraft.trim() !== "" &&
-      Number.isFinite(nextValue) &&
-      nextValue >= -0.95 &&
-      nextValue <= 0.95
-    ) {
-      onChange(nextValue);
-    }
-  }
-
-  function commitDraft() {
-    const currentDraft = draft ?? String(value);
-    const nextValue = Number(currentDraft);
-    setDraft(null);
-
-    if (currentDraft.trim() === "" || !Number.isFinite(nextValue)) {
-      return;
-    }
-
-    const committedValue = clamp(nextValue, -0.95, 0.95);
-    onChange(committedValue);
-  }
-
-  function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
-    if (
-      (event.key === "ArrowUp" || event.key === "ArrowDown") &&
-      Number.isFinite(parsedDisplayedValue)
-    ) {
-      event.preventDefault();
-      const nextValue = clamp(
-        parsedDisplayedValue + (event.key === "ArrowUp" ? 0.05 : -0.05),
-        -0.95,
-        0.95,
-      );
-      setDraft(String(nextValue));
-      onChange(nextValue);
-    } else if (event.key === "Enter") {
-      event.currentTarget.blur();
-    } else if (event.key === "Escape") {
-      setDraft(null);
-      event.currentTarget.blur();
-    }
-  }
+  const numberDraft = useNumberDraft({
+    value,
+    min: -1,
+    max: 1,
+    step: 0.05,
+    onValueChange: onChange,
+    handleArrowKeys: true,
+  });
 
   return (
     <div className="correlation-editor">
@@ -295,23 +202,23 @@ function CorrelationEditor({ value, onChange }: CorrelationEditorProps) {
                 role="spinbutton"
                 inputMode="decimal"
                 pattern="-?[0-9]*\\.?[0-9]*"
-                min={-0.95}
-                max={0.95}
+                min={-1}
+                max={1}
                 step={0.05}
-                value={displayedValue}
-                aria-valuemin={-0.95}
-                aria-valuemax={0.95}
+                value={numberDraft.displayedValue}
+                aria-valuemin={-1}
+                aria-valuemax={1}
                 aria-valuenow={
-                  displayedValue.trim() !== "" &&
-                  Number.isFinite(parsedDisplayedValue)
-                    ? parsedDisplayedValue
+                  numberDraft.displayedValue.trim() !== "" &&
+                  Number.isFinite(numberDraft.parsedValue)
+                    ? numberDraft.parsedValue
                     : undefined
                 }
                 aria-describedby={hintId}
-                onFocus={() => setDraft(String(value))}
-                onChange={handleChange}
-                onBlur={commitDraft}
-                onKeyDown={handleKeyDown}
+                onFocus={numberDraft.handleFocus}
+                onChange={numberDraft.handleChange}
+                onBlur={numberDraft.handleBlur}
+                onKeyDown={numberDraft.handleKeyDown}
               />
             </td>
           </tr>
@@ -466,94 +373,105 @@ export function ScenarioControls({
             <span>Bonds {bondPercent}%</span>
           </div>
         </div>
-
-        <div className="asset-assumptions-grid">
-          <AssetAssumptionControls
-            asset="stocks"
-            assumptions={inputs.stocks}
-            onChange={(field, value) => updateAsset("stocks", field, value)}
-          />
-          <AssetAssumptionControls
-            asset="bonds"
-            assumptions={inputs.bonds}
-            onChange={(field, value) => updateAsset("bonds", field, value)}
-          />
-        </div>
-        <p className="scenario-controls__note">
-          Returns and volatility are annual assumptions before inflation.
-        </p>
       </fieldset>
 
-      <fieldset className="scenario-controls__section">
-        <legend>Diversification</legend>
-        <CorrelationEditor
-          value={inputs.correlation}
-          onChange={(value) => updateInput("correlation", value)}
-        />
-        <div className="control">
-          <label className="control__label" htmlFor="rebalance-frequency">
-            Rebalancing
-          </label>
-          <select
-            id="rebalance-frequency"
-            className="control__select"
-            value={inputs.rebalanceFrequency}
-            onChange={(event) =>
-              updateInput(
-                "rebalanceFrequency",
-                event.currentTarget.value as RebalanceFrequency,
-              )
-            }
-          >
-            <option value="monthly">Monthly</option>
-            <option value="annual">Annually</option>
-            <option value="never">Never</option>
-          </select>
-          <p className="control__hint">
-            Restores the selected stock–bond mix on this schedule.
-          </p>
-        </div>
-      </fieldset>
-
-      <fieldset className="scenario-controls__section">
-        <legend>Model settings</legend>
-        <div className="scenario-controls__grid">
-          <NumberControl
-            id="inflation-rate"
-            label="Inflation"
-            value={toPercentInput(inputs.inflationRate)}
-            min={-5}
-            max={20}
-            step={0.1}
-            suffix="%"
-            hint="Used to estimate purchasing power in today’s dollars."
-            onValueChange={(value) =>
-              updateInput("inflationRate", value / 100)
-            }
-          />
-          <div className="control">
-            <label className="control__label" htmlFor="simulation-paths">
-              Simulation paths
-            </label>
-            <div className="control__input-shell">
-              <input
-                id="simulation-paths"
-                className="control__number"
-                type="number"
-                value={FIXED_PATH_COUNT}
-                readOnly
-                aria-readonly="true"
+      <details className="assumptions-disclosure">
+        <summary>
+          <span>Model assumptions</span>
+          <small>Returns, volatility, correlation, and inflation</small>
+        </summary>
+        <div className="assumptions-disclosure__content">
+          <fieldset className="scenario-controls__section">
+            <legend>Market assumptions</legend>
+            <div className="asset-assumptions-grid">
+              <AssetAssumptionControls
+                asset="stocks"
+                assumptions={inputs.stocks}
+                onChange={(field, value) => updateAsset("stocks", field, value)}
               />
-              <span className="control__affix control__affix--suffix">
-                paths
-              </span>
+              <AssetAssumptionControls
+                asset="bonds"
+                assumptions={inputs.bonds}
+                onChange={(field, value) => updateAsset("bonds", field, value)}
+              />
             </div>
-            <p className="control__hint">
-              Fixed for consistent, responsive comparisons.
+            <p className="scenario-controls__note">
+              Returns and volatility are annual assumptions before inflation.
             </p>
-          </div>
+          </fieldset>
+
+          <fieldset className="scenario-controls__section">
+            <legend>Diversification</legend>
+            <CorrelationEditor
+              value={inputs.correlation}
+              onChange={(value) => updateInput("correlation", value)}
+            />
+            <div className="control">
+              <label className="control__label" htmlFor="rebalance-frequency">
+                Rebalancing
+              </label>
+              <select
+                id="rebalance-frequency"
+                className="control__select"
+                value={inputs.rebalanceFrequency}
+                onChange={(event) =>
+                  updateInput(
+                    "rebalanceFrequency",
+                    event.currentTarget.value as RebalanceFrequency,
+                  )
+                }
+              >
+                <option value="monthly">Monthly</option>
+                <option value="annual">Annually</option>
+                <option value="never">Never</option>
+              </select>
+              <p className="control__hint">
+                Restores the selected stock–bond mix on this schedule.
+              </p>
+            </div>
+          </fieldset>
+
+          <fieldset className="scenario-controls__section">
+            <legend>Model settings</legend>
+            <div className="scenario-controls__grid">
+              <NumberControl
+                id="inflation-rate"
+                label="Inflation"
+                value={toPercentInput(inputs.inflationRate)}
+                min={-5}
+                max={20}
+                step={0.1}
+                suffix="%"
+                hint="Used to estimate purchasing power in today’s dollars."
+                onValueChange={(value) =>
+                  updateInput("inflationRate", value / 100)
+                }
+              />
+              <div className="control">
+                <label className="control__label" htmlFor="simulation-paths">
+                  Simulation paths
+                </label>
+                <div className="control__input-shell">
+                  <input
+                    id="simulation-paths"
+                    className="control__number"
+                    type="number"
+                    value={FIXED_PATH_COUNT}
+                    readOnly
+                    aria-readonly="true"
+                  />
+                  <span className="control__affix control__affix--suffix">
+                    paths
+                  </span>
+                </div>
+                <p className="control__hint">
+                  Fixed for consistent, responsive comparisons.
+                </p>
+              </div>
+            </div>
+          </fieldset>
         </div>
-      </fieldset>
+      </details>
     </div>
   );
 }

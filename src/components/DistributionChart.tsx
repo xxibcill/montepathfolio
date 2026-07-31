@@ -1,36 +1,19 @@
 import { useEffect, useMemo, useRef } from "react";
-import type { SimulationResult } from "../types/simulation";
 import { useCanvasSize } from "../hooks/useCanvasSize";
+import {
+  CHART_COLORS as COLORS,
+  compactCurrency,
+  formatProbability,
+  fullCurrency,
+  niceCeiling,
+} from "../lib/chart";
+import type { SimulationResult } from "../types/simulation";
 
 export interface DistributionChartProps {
   result: SimulationResult;
   targetValue?: number;
   className?: string;
 }
-
-const COLORS = {
-  paper: "#fbf7ef",
-  ink: "#29332d",
-  mutedInk: "#68736b",
-  grid: "#ded9ce",
-  forest: "#376c4d",
-  forestFill: "rgba(55, 108, 77, 0.62)",
-  forestOutline: "rgba(41, 51, 45, 0.5)",
-  vermilion: "#a94734",
-};
-
-const compactCurrency = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-  notation: "compact",
-  maximumFractionDigits: 1,
-});
-
-const fullCurrency = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-  maximumFractionDigits: 0,
-});
 
 function quantile(sortedValues: number[], probability: number) {
   if (sortedValues.length === 0) {
@@ -45,25 +28,6 @@ function quantile(sortedValues: number[], probability: number) {
   const upper = sortedValues[upperIndex] ?? lower;
 
   return lower + (upper - lower) * interpolation;
-}
-
-function niceCeiling(value: number, tickCount = 4) {
-  if (!Number.isFinite(value) || value <= 0) {
-    return 1;
-  }
-
-  const roughStep = value / tickCount;
-  const magnitude = 10 ** Math.floor(Math.log10(roughStep));
-  const normalized = roughStep / magnitude;
-  const niceFactor =
-    normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
-  const step = niceFactor * magnitude;
-
-  return Math.ceil(value / step) * step;
-}
-
-function formatProbability(value: number) {
-  return `${Math.round(Math.max(0, Math.min(1, value)) * 100)}%`;
 }
 
 export function DistributionChart({
