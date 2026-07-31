@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import type { SimulationInputs } from "../types/simulation";
 import { DEFAULT_INPUTS } from "./defaults";
-import { runSimulation, sampleRegime } from "./simulation";
+import {
+  runSimulation,
+  runSimulationCase,
+  sampleRegime,
+} from "./simulation";
 
 const BASE_INPUTS: SimulationInputs = {
   ...DEFAULT_INPUTS,
@@ -223,6 +227,27 @@ describe("runSimulation", () => {
     expect(hmm.comparisonMetrics.hmm).toEqual(
       constant.comparisonMetrics.hmm,
     );
+  });
+
+  it("runs one selected model through the portfolio-lab execution path", async () => {
+    const inputs = {
+      ...BASE_INPUTS,
+      model: "constant" as const,
+      horizonYears: 2,
+      pathCount: 80,
+    };
+    const selected = await runSimulationCase(
+      inputs,
+      new AbortController().signal,
+    );
+    const combined = runSimulation(inputs);
+
+    expect(selected.samplePaths).toEqual(combined.samplePaths);
+    expect(selected.sampleDrawdownPaths).toEqual(
+      combined.sampleDrawdownPaths,
+    );
+    expect(selected.metrics).toEqual(combined.comparisonMetrics.constant);
+    expect("comparisonMetrics" in selected).toBe(false);
   });
 
   it("reports the average percentage gap among paths that miss the target", () => {

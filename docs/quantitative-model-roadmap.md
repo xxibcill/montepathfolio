@@ -305,7 +305,8 @@ Exit gate:
 - Existing non-simulation tests remain at their owning interfaces; portfolio
   simulation behavior and new case invariants pass through the portfolio-lab
   seam.
-- The temporary compatibility adapter has a removal ticket and no new caller.
+- The temporary compatibility adapter has a
+  [removal ticket](legacy-portfolio-lab-adapter-removal.md) and no new caller.
 
 ### Release 1 — The next three model verticals
 
