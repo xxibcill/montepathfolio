@@ -4,6 +4,7 @@ import type {
   MarketAssumptions,
   RegimeProbabilities,
   SimulationModel,
+  SimulationCaseResult,
   SimulationInputs,
   SimulationMetrics,
   SimulationResult,
@@ -14,6 +15,7 @@ const DEFAULT_PATH_COUNT = 1_000;
 const MAX_SAMPLE_PATHS = 160;
 const MONTHS_PER_YEAR = 12;
 const THIRTY_PERCENT_DRAWDOWN = 0.3;
+const COOPERATIVE_PATH_BATCH_SIZE = 16;
 
 interface MonthlyModel {
   stockDrift: number;
@@ -41,20 +43,18 @@ interface MetricSources {
 }
 
 export function runSimulation(rawInputs: SimulationInputs): SimulationResult {
-  const inputs = normalizeInputs(rawInputs);
-  const monthCount = Math.round(inputs.horizonYears * MONTHS_PER_YEAR);
+  const { inputs, monthCount } = prepareSimulation(rawInputs);
   // Both models use identical asset-shock streams. The HMM draws regimes from a
   // separate seeded stream so comparison deltas reflect the model, not luck.
   const pathsByModel: Record<SimulationModel, PathAnalysis[]> = {
     constant: simulatePaths(inputs, monthCount, "constant"),
     hmm: simulatePaths(inputs, monthCount, "hmm"),
   };
-  const paths = pathsByModel[inputs.model];
-  const pathValues = paths.map((path) => path.values);
-  const drawdownValues = paths.map((path) => path.drawdowns);
-  const terminalValues = paths.map((path) => path.values[monthCount]);
-  const maxDrawdowns = paths.map((path) => path.maxDrawdown);
-  const sampleIndexes = selectSampleIndexes(paths.length);
+  const selectedResult = buildSimulationCaseResult(
+    inputs,
+    monthCount,
+    pathsByModel[inputs.model],
+  );
   const comparisonMetrics = {
     constant: buildMetricsFromPaths(
       inputs,
@@ -65,21 +65,9 @@ export function runSimulation(rawInputs: SimulationInputs): SimulationResult {
   };
 
   return {
+    ...selectedResult,
     inputs,
     months: Array.from({ length: monthCount + 1 }, (_, month) => month),
-    samplePaths: sampleIndexes.map((index) => pathValues[index]),
-    sampleDrawdownPaths: sampleIndexes.map((index) => drawdownValues[index]),
-    pathPercentiles: buildPercentileSeries(pathValues, monthCount + 1),
-    drawdownPercentiles: buildPercentileSeries(drawdownValues, monthCount + 1),
-    terminalValues,
-    maxDrawdowns,
-    sampleRegimePaths:
-      inputs.model === "hmm"
-        ? sampleIndexes.map((index) => paths[index].regimes)
-        : [],
-    regimeOccupancy:
-      inputs.model === "hmm" ? calculateRegimeOccupancy(paths) : null,
-    metrics: comparisonMetrics[inputs.model],
     comparisonMetrics,
     computedAt: Date.now(),
   };
@@ -87,11 +75,106 @@ export function runSimulation(rawInputs: SimulationInputs): SimulationResult {
 
 export const simulatePortfolio = runSimulation;
 
+export class SimulationCancelledError extends Error {
+  constructor() {
+    super("Simulation was cancelled.");
+    this.name = "SimulationCancelledError";
+  }
+}
+
+export async function runSimulationCase(
+  rawInputs: SimulationInputs,
+  signal: AbortSignal,
+): Promise<SimulationCaseResult> {
+  const { inputs, monthCount } = prepareSimulation(rawInputs);
+  const paths = await simulatePathsCooperatively(
+    inputs,
+    monthCount,
+    inputs.model,
+    signal,
+  );
+
+  return buildSimulationCaseResult(inputs, monthCount, paths);
+}
+
+function prepareSimulation(rawInputs: SimulationInputs) {
+  const inputs = normalizeInputs(rawInputs);
+  return {
+    inputs,
+    monthCount: Math.round(inputs.horizonYears * MONTHS_PER_YEAR),
+  };
+}
+
+function buildSimulationCaseResult(
+  inputs: SimulationInputs,
+  monthCount: number,
+  paths: PathAnalysis[],
+): SimulationCaseResult {
+  const pathValues = paths.map((path) => path.values);
+  const drawdownValues = paths.map((path) => path.drawdowns);
+  const sampleIndexes = selectSimulationSampleIndexes(paths.length);
+
+  return {
+    samplePaths: sampleIndexes.map((index) => pathValues[index]),
+    sampleDrawdownPaths: sampleIndexes.map((index) => drawdownValues[index]),
+    pathPercentiles: buildPercentileSeries(pathValues, monthCount + 1),
+    drawdownPercentiles: buildPercentileSeries(drawdownValues, monthCount + 1),
+    terminalValues: paths.map((path) => path.values[monthCount]),
+    maxDrawdowns: paths.map((path) => path.maxDrawdown),
+    sampleRegimePaths:
+      inputs.model === "hmm"
+        ? sampleIndexes.map((index) => paths[index].regimes)
+        : [],
+    regimeOccupancy:
+      inputs.model === "hmm" ? calculateRegimeOccupancy(paths) : null,
+    metrics: buildMetricsFromPaths(inputs, monthCount, paths),
+  };
+}
+
 function simulatePaths(
   inputs: SimulationInputs,
   monthCount: number,
   modelType: SimulationModel,
 ): PathAnalysis[] {
+  const models = createPathModels(inputs);
+  return Array.from({ length: inputs.pathCount }, (_, pathIndex) =>
+    simulatePathAtIndex(inputs, monthCount, modelType, models, pathIndex),
+  );
+}
+
+async function simulatePathsCooperatively(
+  inputs: SimulationInputs,
+  monthCount: number,
+  modelType: SimulationModel,
+  signal: AbortSignal,
+): Promise<PathAnalysis[]> {
+  const models = createPathModels(inputs);
+  const paths: PathAnalysis[] = [];
+
+  await Promise.resolve();
+  throwIfCancelled(signal);
+
+  for (let pathIndex = 0; pathIndex < inputs.pathCount; pathIndex += 1) {
+    paths.push(
+      simulatePathAtIndex(inputs, monthCount, modelType, models, pathIndex),
+    );
+
+    if ((pathIndex + 1) % COOPERATIVE_PATH_BATCH_SIZE === 0) {
+      await yieldToEventLoop();
+      throwIfCancelled(signal);
+    }
+  }
+
+  throwIfCancelled(signal);
+  return paths;
+}
+
+interface PathModels {
+  readonly constant: MonthlyModel;
+  readonly regimes: Record<Regime, MonthlyModel>;
+}
+
+function createPathModels(inputs: SimulationInputs): PathModels {
   const constantAssumptions: MarketAssumptions = {
     stocks: inputs.stocks,
     bonds: inputs.bonds,
@@ -104,27 +187,41 @@ function simulatePaths(
       createMonthlyModel(inputs.hmm.regimes[regime]),
     ]),
   ) as Record<Regime, MonthlyModel>;
-  const paths: PathAnalysis[] = [];
 
-  for (let pathIndex = 0; pathIndex < inputs.pathCount; pathIndex += 1) {
-    const pathSeed = derivePathSeed(inputs.seed, pathIndex);
-    const nextNormal = createNormalGenerator(pathSeed);
-    const regimeSeed = derivePathSeed(inputs.seed ^ 0x51f15e, pathIndex);
-    const nextRegimeUniform = createUniformGenerator(regimeSeed);
-    paths.push(
-      simulatePath(
-        inputs,
-        monthCount,
-        modelType,
-        constantModel,
-        regimeModels,
-        nextNormal,
-        nextRegimeUniform,
-      ),
-    );
+  return { constant: constantModel, regimes: regimeModels };
+}
+
+function simulatePathAtIndex(
+  inputs: SimulationInputs,
+  monthCount: number,
+  modelType: SimulationModel,
+  models: PathModels,
+  pathIndex: number,
+): PathAnalysis {
+  const pathSeed = derivePathSeed(inputs.seed, pathIndex);
+  const regimeSeed = derivePathSeed(inputs.seed ^ 0x51f15e, pathIndex);
+
+  return simulatePath(
+    inputs,
+    monthCount,
+    modelType,
+    models.constant,
+    models.regimes,
+    createNormalGenerator(pathSeed),
+    createUniformGenerator(regimeSeed),
+  );
+}
+
+function throwIfCancelled(signal: AbortSignal): void {
+  if (signal.aborted) {
+    throw new SimulationCancelledError();
   }
+}
 
-  return paths;
+function yieldToEventLoop(): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, 0);
+  });
 }
 
 function simulatePath(
@@ -323,7 +420,7 @@ function buildPercentileSeries(
   return series;
 }
 
-function selectSampleIndexes(pathCount: number): number[] {
+export function selectSimulationSampleIndexes(pathCount: number): number[] {
   if (pathCount <= MAX_SAMPLE_PATHS) {
     return Array.from({ length: pathCount }, (_, index) => index);
   }

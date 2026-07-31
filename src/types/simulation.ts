@@ -71,9 +71,7 @@ export interface SimulationMetrics {
   totalContributed: number;
 }
 
-export interface SimulationResult {
-  inputs: SimulationInputs;
-  months: number[];
+export interface SimulationCaseResult {
   samplePaths: number[][];
   sampleDrawdownPaths: number[][];
   pathPercentiles: PercentileSeries;
@@ -84,6 +82,11 @@ export interface SimulationResult {
   sampleRegimePaths: Regime[][];
   regimeOccupancy: RegimeProbabilities | null;
   metrics: SimulationMetrics;
+}
+
+export interface SimulationResult extends SimulationCaseResult {
+  inputs: SimulationInputs;
+  months: number[];
   comparisonMetrics: Record<SimulationModel, SimulationMetrics>;
   computedAt: number;
 }
