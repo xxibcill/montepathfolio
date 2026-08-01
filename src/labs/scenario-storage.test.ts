@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getLesson } from "./catalog";
 import type { LessonCalibrationSnapshot, LessonOutput } from "./lesson-types";
 import {
@@ -96,5 +96,22 @@ describe("lesson scenario persistence", () => {
 
     expect(restored.calibrationSnapshot).toBeNull();
     expect(restored.needsDataReattachment).toBe(true);
+  });
+
+  it("reports when the browser rejects local persistence", () => {
+    const lesson = getLesson("portfolio-projection", "garch");
+    const values = Object.fromEntries(
+      lesson.parameters.map((parameter) => [parameter.id, parameter.defaultValue]),
+    );
+    const setItem = vi
+      .spyOn(Storage.prototype, "setItem")
+      .mockImplementation(() => {
+        throw new DOMException("Quota exceeded", "QuotaExceededError");
+      });
+
+    expect(
+      saveLessonScenario("portfolio-projection", lesson, values, output),
+    ).toBe(false);
+    setItem.mockRestore();
   });
 });

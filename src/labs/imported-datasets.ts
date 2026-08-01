@@ -1,11 +1,52 @@
 import {
-  parseReturnDatasetCsv,
+  validateReturnDataset,
   type ObservationFrequency,
   type ReturnConvention,
   type ReturnDataset,
 } from "../lib/quant/market-models";
 import { QuantError } from "../lib/quant/core";
 import type { LessonDataAttachment } from "./lesson-worker-protocol";
+
+export function parseReturnDatasetCsv(
+  csv: string,
+  options: Omit<
+    ReturnDataset,
+    "contract" | "assetIds" | "timestamps" | "rows"
+  >,
+): ReturnDataset {
+  const lines = csv
+    .trim()
+    .split(/\r?\n/)
+    .map((line) => line.split(",").map((cell) => cell.trim()));
+  if (lines.length < 3 || lines[0].length < 2) {
+    throw new QuantError(
+      "INVALID_INPUT",
+      "CSV needs a timestamp column, at least one asset, and two data rows.",
+    );
+  }
+  if (lines.some((line) => line.length !== lines[0].length)) {
+    throw new QuantError(
+      "DIMENSION_MISMATCH",
+      "Every CSV row must contain the same number of columns as its header.",
+    );
+  }
+  const dataset: ReturnDataset = {
+    contract: "return-dataset@1",
+    assetIds: lines[0].slice(1),
+    timestamps: lines.slice(1).map((row) => row[0]),
+    rows: lines.slice(1).map((row) =>
+      row.slice(1).map((cell) => {
+        if (cell === "") {
+          throw new QuantError("INVALID_INPUT", "Missing CSV values are rejected.");
+        }
+        return Number(cell);
+      }),
+    ),
+    ...options,
+  };
+  validateReturnDataset(dataset);
+  return dataset;
+}
 
 export function parseImportedReturnDataset(
   attachment: LessonDataAttachment,

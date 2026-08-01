@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { LABS, LESSONS } from "./catalog";
+import { getLesson, isKnownLesson, LABS, LESSONS } from "./catalog";
 import { runLesson } from "./lesson-runners";
 import { LESSON_DATA_ATTACHMENT_CONTRACT } from "./lesson-worker-protocol";
 import type { LessonDefinition, LessonOutput } from "./lesson-types";
@@ -67,6 +67,11 @@ function expectFiniteOutput(output: LessonOutput): void {
   }
 }
 
+function isOnStep(value: number, minimum: number, step: number): boolean {
+  const steps = (value - minimum) / step;
+  return Math.abs(steps - Math.round(steps)) < 1e-9;
+}
+
 describe("educational lesson catalog", () => {
   it("maps every advanced lesson to exactly one laboratory", () => {
     expect(new Set(LESSONS.map((lesson) => lesson.id)).size).toBe(
@@ -77,6 +82,11 @@ describe("educational lesson catalog", () => {
       const lab = LABS.find((candidate) => candidate.id === lesson.lab);
       expect(lab?.lessonIds).toContain(lesson.id);
     }
+  });
+
+  it("rejects unknown lesson identifiers instead of silently changing lessons", () => {
+    expect(isKnownLesson("risk", "not-a-lesson")).toBe(false);
+    expect(() => getLesson("risk", "not-a-lesson")).toThrow(/Unknown lesson route/);
   });
 
   it("keeps non-annual percentages labeled with their actual units", () => {
@@ -105,6 +115,10 @@ describe("educational lesson catalog", () => {
           parameter.minimum,
         );
         expect(parameter.defaultValue).toBeLessThanOrEqual(parameter.maximum);
+        expect(
+          isOnStep(parameter.defaultValue, parameter.minimum, parameter.step),
+          `${lesson.id}/${parameter.id} default must align with its input step`,
+        ).toBe(true);
         if (parameter.choices) {
           expect(new Set(parameter.choices.map(({ value }) => value)).size).toBe(
             parameter.choices.length,
@@ -122,6 +136,10 @@ describe("educational lesson catalog", () => {
           expect(parameter, `${lesson.id}/${preset.id}/${parameterId}`).toBeDefined();
           expect(value).toBeGreaterThanOrEqual(parameter!.minimum);
           expect(value).toBeLessThanOrEqual(parameter!.maximum);
+          expect(
+            isOnStep(value, parameter!.minimum, parameter!.step),
+            `${lesson.id}/${preset.id}/${parameterId} must align with its input step`,
+          ).toBe(true);
         }
       }
       if (lesson.dataImport) {

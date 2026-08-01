@@ -117,13 +117,13 @@ import {
 } from "./lesson-values";
 
 type Values = LessonValues;
-type Runner = (
+export type LessonRunner = (
   values: Values,
   attachment?: LessonDataAttachment,
   calibrationSnapshot?: LessonCalibrationSnapshot,
 ) => LessonOutput;
 
-const runners: Readonly<Record<string, Runner>> = {
+const runners: Readonly<Record<string, LessonRunner>> = {
   "jump-diffusion": runJumpDiffusionLesson,
   garch: runGarchLesson,
   "historical-bootstrap": runBootstrapLesson,
@@ -208,7 +208,23 @@ export function runLesson(
   return { ...output, chartAxes };
 }
 
-function runJumpDiffusionLesson(values: Values): LessonOutput {
+export function runLessonWithRunners(
+  id: string,
+  values: Readonly<Record<string, number>>,
+  availableRunners: Readonly<Record<string, LessonRunner>>,
+  attachment?: LessonDataAttachment,
+  calibrationSnapshot?: LessonCalibrationSnapshot,
+): LessonOutput {
+  const validatedValues = validateLessonValues(id, values);
+  const runner = availableRunners[id];
+  if (!runner) throw new Error(`Lesson ${id} is not available in this worker.`);
+  const output = runner(validatedValues, attachment, calibrationSnapshot);
+  const chartAxes = output.chartAxes ?? PRIMARY_CHART_AXES[id];
+  if (!chartAxes) throw new Error(`No chart semantics are registered for ${id}.`);
+  return { ...output, chartAxes };
+}
+
+export function runJumpDiffusionLesson(values: Values): LessonOutput {
   const baseInput = {
     contract: "market-model/merton-jump-diffusion@1" as const,
     initialPrices: [100],
@@ -296,7 +312,7 @@ function runJumpDiffusionLesson(values: Values): LessonOutput {
   });
 }
 
-function runGarchLesson(
+export function runGarchLesson(
   values: Values,
   attachment?: LessonDataAttachment,
   storedSnapshot?: LessonCalibrationSnapshot,
@@ -423,7 +439,7 @@ function runGarchLesson(
     : output;
 }
 
-function runBootstrapLesson(
+export function runBootstrapLesson(
   values: Values,
   attachment?: LessonDataAttachment,
 ): LessonOutput {
@@ -490,7 +506,7 @@ function runBootstrapLesson(
     : output;
 }
 
-function runRetirementLesson(values: Values): LessonOutput {
+export function runRetirementLesson(values: Values): LessonOutput {
   const years = Math.round(values.years);
   const accumulationYears = Math.round(values.accumulationYears);
   const assetReturnPaths = buildRetirementAssetReturnPaths(
@@ -563,7 +579,7 @@ function runRetirementLesson(values: Values): LessonOutput {
   });
 }
 
-function runRegimeLesson(
+export function runRegimeLesson(
   values: Values,
   attachment?: LessonDataAttachment,
   storedSnapshot?: LessonCalibrationSnapshot,
@@ -648,7 +664,7 @@ function runRegimeLesson(
   };
 }
 
-function runStudentTLesson(values: Values): LessonOutput {
+export function runStudentTLesson(values: Values): LessonOutput {
   const sampleCount = Math.round(values.samples);
   const degrees = Math.round(values.degreesOfFreedom);
   const output = runStudentTInnovations({
@@ -698,7 +714,7 @@ function runStudentTLesson(values: Values): LessonOutput {
   };
 }
 
-function runCopulaLesson(values: Values): LessonOutput {
+export function runCopulaLesson(values: Values): LessonOutput {
   const request = {
     contract: "market-model/copula@1" as const,
     correlation: [[1, values.correlation], [values.correlation, 1]],
@@ -761,7 +777,7 @@ function runCopulaLesson(values: Values): LessonOutput {
   });
 }
 
-function runCompositeLesson(values: Values): LessonOutput {
+export function runCompositeLesson(values: Values): LessonOutput {
   const alpha = 0.08;
   const beta = Math.max(0, values.garchPersistence - alpha);
   const enabled = {
@@ -935,7 +951,7 @@ function runCompositeLesson(values: Values): LessonOutput {
   };
 }
 
-function runVarLesson(values: Values): LessonOutput {
+export function runVarLesson(values: Values): LessonOutput {
   const confidence = values.confidence;
   const portfolioValue = values.portfolioValue;
   const returns = illustrativeLossReturns(400);
@@ -1030,7 +1046,7 @@ function runVarLesson(values: Values): LessonOutput {
   });
 }
 
-function runBacktestingLesson(
+export function runBacktestingLesson(
   values: Values,
   attachment?: LessonDataAttachment,
 ): LessonOutput {
@@ -1119,7 +1135,7 @@ function runBacktestingLesson(
   };
 }
 
-function runMeanVarianceLesson(values: Values): LessonOutput {
+export function runMeanVarianceLesson(values: Values): LessonOutput {
   const covariance = twoAssetCovariance(0.2, 0.1, values.correlation);
   const envelope = runMeanVariance({
     contract: MEAN_VARIANCE_REQUEST_CONTRACT,
@@ -1167,7 +1183,7 @@ function runMeanVarianceLesson(values: Values): LessonOutput {
   });
 }
 
-function runCapmLesson(values: Values): LessonOutput {
+export function runCapmLesson(values: Values): LessonOutput {
   const market = Array.from({ length: 48 }, (_, index) =>
     0.006 + 0.025 * Math.sin(index * 0.83) + 0.012 * Math.cos(index * 0.31),
   );
@@ -1218,7 +1234,7 @@ function runCapmLesson(values: Values): LessonOutput {
   });
 }
 
-function runFactorLesson(
+export function runFactorLesson(
   values: Values,
   attachment?: LessonDataAttachment,
 ): LessonOutput {
@@ -1379,7 +1395,7 @@ function runFactorLesson(
     : output;
 }
 
-function runRiskParityLesson(values: Values): LessonOutput {
+export function runRiskParityLesson(values: Values): LessonOutput {
   const covariance = twoAssetCovariance(
     values.volatilityA,
     values.volatilityB,
@@ -1428,7 +1444,7 @@ function runRiskParityLesson(values: Values): LessonOutput {
   });
 }
 
-function runKellyLesson(values: Values): LessonOutput {
+export function runKellyLesson(values: Values): LessonOutput {
   const envelope = runKelly({
     contract: KELLY_REQUEST_CONTRACT,
     assetIds: ["Asset A", "Asset B"],
@@ -1487,7 +1503,7 @@ function runKellyLesson(values: Values): LessonOutput {
   });
 }
 
-function runBlackLittermanLesson(values: Values): LessonOutput {
+export function runBlackLittermanLesson(values: Values): LessonOutput {
   const envelope = runBlackLitterman({
     contract: BLACK_LITTERMAN_REQUEST_CONTRACT,
     assetIds: ["Asset A", "Asset B"],
@@ -1543,7 +1559,7 @@ function runBlackLittermanLesson(values: Values): LessonOutput {
   });
 }
 
-function runBlackScholesLesson(values: Values): LessonOutput {
+export function runBlackScholesLesson(values: Values): LessonOutput {
   const surfaceDimension = (["spot", "volatility", "time"] as const)[
     Math.max(0, Math.min(2, Math.round(values.surfaceDimension)))
   ];
@@ -1676,7 +1692,7 @@ function runBlackScholesLesson(values: Values): LessonOutput {
   });
 }
 
-function runBinomialLesson(values: Values): LessonOutput {
+export function runBinomialLesson(values: Values): LessonOutput {
   const steps = Math.round(values.steps);
   const totalNodes = ((steps + 1) * (steps + 2)) / 2;
   const common = {
@@ -1758,7 +1774,7 @@ function runBinomialLesson(values: Values): LessonOutput {
   });
 }
 
-function runMonteCarloOptionLesson(values: Values): LessonOutput {
+export function runMonteCarloOptionLesson(values: Values): LessonOutput {
   const payoffIndex = Math.round(values.payoff);
   const execution = {
     seed: 314,
@@ -1855,7 +1871,7 @@ function runMonteCarloOptionLesson(values: Values): LessonOutput {
   });
 }
 
-function runHestonLesson(values: Values): LessonOutput {
+export function runHestonLesson(values: Values): LessonOutput {
   const envelope = priceHestonMonteCarlo({
     contract: HESTON_REQUEST_CONTRACT,
     option: { optionType: "call", strike: 100 },
@@ -1987,7 +2003,7 @@ function runHestonLesson(values: Values): LessonOutput {
   });
 }
 
-function runStrategyLesson(values: Values): LessonOutput {
+export function runStrategyLesson(values: Values): LessonOutput {
   const strategyIndex = Math.round(values.strategy);
   const strategy =
     strategyIndex === 0
@@ -2075,7 +2091,7 @@ function runStrategyLesson(values: Values): LessonOutput {
   });
 }
 
-function runVasicekLesson(values: Values): LessonOutput {
+export function runVasicekLesson(values: Values): LessonOutput {
   const envelope = compareVasicekAndCir({
     contract: SHORT_RATE_COMPARISON_REQUEST_CONTRACT,
     vasicekParameters: {
@@ -2146,7 +2162,7 @@ function runVasicekLesson(values: Values): LessonOutput {
   });
 }
 
-function runCirLesson(values: Values): LessonOutput {
+export function runCirLesson(values: Values): LessonOutput {
   const envelope = runCirModel({
     contract: CIR_REQUEST_CONTRACT,
     parameters: {
@@ -2187,7 +2203,7 @@ function runCirLesson(values: Values): LessonOutput {
   });
 }
 
-function runNelsonSiegelLesson(values: Values): LessonOutput {
+export function runNelsonSiegelLesson(values: Values): LessonOutput {
   const maturities = [0.25, 0.5, 1, 2, 3, 5, 7, 10, 20, 30];
   const observed = evaluateNelsonSiegelCurve(
     {
@@ -2266,7 +2282,7 @@ function runNelsonSiegelLesson(values: Values): LessonOutput {
   });
 }
 
-function runHazardLesson(values: Values): LessonOutput {
+export function runHazardLesson(values: Values): LessonOutput {
   const evaluationTimes = Array.from(
     { length: Math.max(2, Math.round(values.maturity * 2)) },
     (_, index) => ((index + 1) * values.maturity) / Math.max(2, Math.round(values.maturity * 2)),
@@ -2338,7 +2354,7 @@ function runHazardLesson(values: Values): LessonOutput {
   });
 }
 
-function runMertonCreditLesson(values: Values): LessonOutput {
+export function runMertonCreditLesson(values: Values): LessonOutput {
   const envelope = mertonStructuralCredit({
     contract: MERTON_CREDIT_REQUEST_CONTRACT,
     assetValue: values.assetValue,
@@ -2392,7 +2408,7 @@ function runMertonCreditLesson(values: Values): LessonOutput {
   });
 }
 
-function runOuLesson(values: Values): LessonOutput {
+export function runOuLesson(values: Values): LessonOutput {
   const calibrationSimulation = runOrnsteinUhlenbeck({
     contract: "trading-lab/ornstein-uhlenbeck@1",
     initialSpread: values.initialSpread,
@@ -2471,7 +2487,7 @@ function runOuLesson(values: Values): LessonOutput {
   });
 }
 
-function runOrderBookLesson(values: Values): LessonOutput {
+export function runOrderBookLesson(values: Values): LessonOutput {
   const mid = 100;
   const halfSpread = values.spread / 2;
   const depth = Math.round(values.depth);
@@ -2542,7 +2558,7 @@ function runOrderBookLesson(values: Values): LessonOutput {
   };
 }
 
-function runAgentMarketLesson(values: Values): LessonOutput {
+export function runAgentMarketLesson(values: Values): LessonOutput {
   const noiseAgents = Array.from({ length: Math.round(values.noiseAgents) }, (_, index) => ({
     id: `noise-${index + 1}`,
     kind: "noise" as const,
@@ -2627,7 +2643,7 @@ function runAgentMarketLesson(values: Values): LessonOutput {
   };
 }
 
-function runExecutionLesson(values: Values): LessonOutput {
+export function runExecutionLesson(values: Values): LessonOutput {
   const envelope = runAlmgrenChriss({
     contract: "trading-lab/almgren-chriss@1",
     shares: Math.round(values.shares),

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { BookOpen, RotateCcw } from "lucide-react";
 import { ComparisonNote } from "../components/ComparisonNote";
 import { DistributionChart } from "../components/DistributionChart";
@@ -12,6 +12,7 @@ import { RegimeSnapshot } from "../components/RegimeSnapshot";
 import { RegimeTimeline } from "../components/RegimeTimeline";
 import { ScenarioControls } from "../components/ScenarioControls";
 import { ThemeToggle } from "../components/ThemeToggle";
+import { InPageLink } from "../components/InPageLink";
 import {
   DEFAULT_INPUTS,
   loadStoredPortfolioProjectionInputs,
@@ -19,6 +20,7 @@ import {
 } from "../lib/defaults";
 import { hmmConfigurationsEqual } from "../lib/regimes";
 import { useSimulation } from "../hooks/useSimulation";
+import { usePageFocus } from "../hooks/usePageFocus";
 import type { PortfolioProjectionInputs } from "../types/portfolio-projection";
 
 function inputsMatch(
@@ -44,6 +46,8 @@ function inputsMatch(
 }
 
 function PortfolioProjectionLab() {
+  const mainRef = useRef<HTMLElement>(null);
+  usePageFocus("portfolio-projection/accumulation", mainRef);
   const [inputs, setInputs] =
     useState<PortfolioProjectionInputs>(loadStoredPortfolioProjectionInputs);
   const { result, previousResult, status, error, run } = useSimulation();
@@ -75,9 +79,9 @@ function PortfolioProjectionLab() {
 
   return (
     <>
-      <a className="skip-link" href="#main-content">
+      <InPageLink className="skip-link" targetId="main-content">
         Skip to simulation results
-      </a>
+      </InPageLink>
 
       <div className="app-shell">
         <header className="masthead">
@@ -98,10 +102,10 @@ function PortfolioProjectionLab() {
             <a className="text-link" href="#/labs/portfolio-projection/jump-diffusion">
               Advanced models
             </a>
-            <a className="text-link" href="#methodology">
+            <InPageLink className="text-link" targetId="methodology">
               <BookOpen size={16} strokeWidth={1.8} aria-hidden="true" />
               Method
-            </a>
+            </InPageLink>
             <ThemeToggle />
             <span
               className={`model-status model-status--${status}`}
@@ -114,7 +118,7 @@ function PortfolioProjectionLab() {
           </div>
         </header>
 
-        <main id="main-content">
+        <main id="main-content" ref={mainRef} tabIndex={-1}>
           <section className="opening">
             <div className="opening__kicker">
               <span>Regime-switching planning lab</span>
@@ -170,7 +174,7 @@ function PortfolioProjectionLab() {
               ) : null}
 
               {!result ? (
-                <LoadingChart />
+                <LoadingChart label="Calculating 1,000 futures…" />
               ) : (
                 <>
                   <section className="results-intro" aria-labelledby="results-title">

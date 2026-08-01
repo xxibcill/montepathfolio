@@ -5,11 +5,19 @@ import {
   assertIntegerInRange,
   assertNonNegative,
   assertPositive,
+  asPriceSeries,
+  asQuantitySeries,
+  asSpreadSeries,
+  asTimeSeries,
   createSemanticRandom,
   mean,
   sampleVariance,
   type ModelEnvelope,
   type ModelWarning,
+  type PriceSeries,
+  type QuantitySeries,
+  type SpreadSeries,
+  type TimeSeries,
 } from "./core";
 
 export const TRADING_LAB_VERSION = "trading-lab@1";
@@ -35,7 +43,7 @@ export interface OrnsteinUhlenbeckInput {
 
 export interface OrnsteinUhlenbeckResult {
   readonly contract: "trading-lab/ornstein-uhlenbeck-result@1";
-  readonly sampledSpreadPaths: readonly (readonly number[])[];
+  readonly sampledSpreadPaths: readonly SpreadSeries[];
   readonly halfLifeYears: number;
   readonly conditionalStepMean: number;
   readonly conditionalStepVariance: number;
@@ -70,7 +78,7 @@ export function runOrnsteinUhlenbeck(
     input.execution.samplePaths ?? 32,
     input.execution.paths,
   );
-  const sampledSpreadPaths: number[][] = [];
+  const sampledSpreadPaths: SpreadSeries[] = [];
   const sampledSignals: OrnsteinUhlenbeckResult["sampledSignals"][number][] = [];
   let entryHits = 0;
   let equilibriumHits = 0;
@@ -121,7 +129,7 @@ export function runOrnsteinUhlenbeck(
     }
     entryHits += Number(entered);
     equilibriumHits += Number(hitEquilibrium);
-    if (pathIndex < sampleCount) sampledSpreadPaths.push(path);
+    if (pathIndex < sampleCount) sampledSpreadPaths.push(asSpreadSeries(path));
   }
 
   return envelope(input.contract, "trading-lab/ornstein-uhlenbeck-result@1", input.execution.seed, {
@@ -560,7 +568,7 @@ export interface AgentMarketResult {
   readonly contract: "trading-lab/agent-market-result@1";
   readonly orderBook: OrderBookResult;
   readonly decisions: readonly AgentDecision[];
-  readonly priceSeries: readonly number[];
+  readonly priceSeries: PriceSeries;
   readonly agentWealth: readonly {
     readonly agentId: string;
     readonly cash: number;
@@ -657,7 +665,7 @@ export function runAgentMarket(input: AgentMarketInput): AgentMarketResult {
     contract: "trading-lab/agent-market-result@1",
     orderBook,
     decisions,
-    priceSeries,
+    priceSeries: asPriceSeries(priceSeries),
     agentWealth: markAgentWealth(input.agents, orderBook.accounts, finalPrice),
     wealthHistory,
     scenarioNotForecast: true,
@@ -677,9 +685,9 @@ export interface AlmgrenChrissInput {
 
 export interface AlmgrenChrissResult {
   readonly contract: "trading-lab/almgren-chriss-result@1";
-  readonly times: readonly number[];
-  readonly sharesRemaining: readonly number[];
-  readonly trades: readonly number[];
+  readonly times: TimeSeries;
+  readonly sharesRemaining: QuantitySeries;
+  readonly trades: QuantitySeries;
   readonly expectedTemporaryCost: number;
   readonly expectedPermanentCost: number;
   readonly expectedCost: number;
@@ -1403,9 +1411,9 @@ function buildLiquidationSchedule(
   const objective = expectedCost + riskAversion * costVariance;
   assertFinite(objective, "almgrenChriss.objective");
   return {
-    times,
-    sharesRemaining,
-    trades,
+    times: asTimeSeries(times),
+    sharesRemaining: asQuantitySeries(sharesRemaining),
+    trades: asQuantitySeries(trades),
     expectedTemporaryCost,
     expectedPermanentCost,
     expectedCost,

@@ -46,6 +46,18 @@ function summarizePath(path: readonly PortfolioProjectionRegime[]): string {
   ).join(", ");
 }
 
+function describeSequence(path: readonly PortfolioProjectionRegime[]): string {
+  let month = 1;
+  return compressRegimePath(path)
+    .map((segment) => {
+      const start = month;
+      const end = month + segment.length - 1;
+      month = end + 1;
+      return `${REGIME_LABELS[segment.regime]} months ${start}–${end}`;
+    })
+    .join("; ");
+}
+
 export function RegimePathOverlay({ result }: RegimePathOverlayProps) {
   if (result.inputs.model !== "hmm" || result.sampleRegimePaths.length === 0) {
     return null;
@@ -74,7 +86,7 @@ export function RegimePathOverlay({ result }: RegimePathOverlayProps) {
             <div
               className="regime-path__band"
               role="img"
-              aria-label={`Representative path ${pathIndex + 1}: ${summarizePath(path)}`}
+              aria-label={`Representative path ${pathIndex + 1}: ${summarizePath(path)}. Sequence: ${describeSequence(path)}.`}
             >
               {compressRegimePath(path).map((segment, segmentIndex) => (
                 <i

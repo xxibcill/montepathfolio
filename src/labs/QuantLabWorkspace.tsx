@@ -6,7 +6,8 @@ import {
   RotateCcw,
   Save,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import { InPageLink } from "../components/InPageLink";
 import { LabMasthead } from "../components/LabMasthead";
 import { DatasetImport } from "../components/DatasetImport";
 import { LessonChart } from "../components/LessonChart";
@@ -14,6 +15,7 @@ import {
   useLessonWorker,
   type LessonRunStatus,
 } from "../hooks/useLessonWorker";
+import { usePageFocus } from "../hooks/usePageFocus";
 import { loadStoredInputs, STORAGE_KEY } from "../lib/defaults";
 import { getLab, getLesson, lessonsForLab } from "./catalog";
 import type {
@@ -40,6 +42,8 @@ export default function QuantLabWorkspace({
 }) {
   const lab = getLab(labId);
   const lesson = getLesson(labId, initialLessonId);
+  const mainRef = useRef<HTMLElement>(null);
+  usePageFocus(`${labId}/${lesson.id}`, mainRef);
   const lessons = lessonsForLab(labId);
   const defaults = useMemo(() => defaultValues(lesson), [lesson]);
   const storedScenario = useMemo(
@@ -68,7 +72,7 @@ export default function QuantLabWorkspace({
     calibrationSnapshot ?? undefined,
   );
   const [inputsChanged, setInputsChanged] = useState(false);
-  const [saved, setSaved] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saved" | "error">("idle");
   const displayedStatus: LessonRunStatus =
     inputsChanged && status === "current" ? "changed" : status;
 
@@ -88,7 +92,7 @@ export default function QuantLabWorkspace({
     setAttachment(null);
     setCalibrationSnapshot(null);
     setInputsChanged(true);
-    setSaved(false);
+    setSaveStatus("idle");
   };
 
   const applyPreset = (presetId: string) => {
@@ -98,18 +102,18 @@ export default function QuantLabWorkspace({
     setAttachment(null);
     setCalibrationSnapshot(null);
     setInputsChanged(true);
-    setSaved(false);
+    setSaveStatus("idle");
   };
 
   const save = () => {
-    saveLessonScenario(
+    const didSave = saveLessonScenario(
       labId,
       lesson,
       runValues,
       output,
       runAttachment,
     );
-    setSaved(true);
+    setSaveStatus(didSave ? "saved" : "error");
   };
 
   const changedParameters = previous
@@ -131,12 +135,12 @@ export default function QuantLabWorkspace({
 
   return (
     <>
-      <a className="skip-link" href="#lesson-results">
+      <InPageLink className="skip-link" targetId="lesson-results">
         Skip to experiment results
-      </a>
+      </InPageLink>
       <div className="app-shell lab-workspace-shell">
         <LabMasthead context={`${lab.number} · ${lab.title}`} />
-        <main>
+        <main ref={mainRef} tabIndex={-1}>
           <section className="lab-chapter-header">
             <a className="chapter-back" href="#/">
               <ArrowLeft size={16} aria-hidden="true" /> Laboratory index
@@ -217,7 +221,7 @@ export default function QuantLabWorkspace({
                       onChange={(value) => {
                         setValues((current) => ({ ...current, [parameter.id]: value }));
                         setInputsChanged(true);
-                        setSaved(false);
+                        setSaveStatus("idle");
                       }}
                     />
                   ))}
@@ -231,7 +235,7 @@ export default function QuantLabWorkspace({
                       setAttachment(nextAttachment);
                       setCalibrationSnapshot(null);
                       setInputsChanged(true);
-                      setSaved(false);
+                      setSaveStatus("idle");
                     }}
                   />
                 ) : null}
@@ -254,8 +258,8 @@ export default function QuantLabWorkspace({
                     onClick={save}
                     disabled={displayedStatus !== "current"}
                   >
-                    {saved ? <Check size={15} aria-hidden="true" /> : <Save size={15} aria-hidden="true" />}
-                    {saved ? "Saved" : "Save inputs"}
+                    {saveStatus === "saved" ? <Check size={15} aria-hidden="true" /> : <Save size={15} aria-hidden="true" />}
+                    {saveStatus === "saved" ? "Saved" : "Save inputs"}
                   </button>
                   <button
                     type="button"
@@ -281,6 +285,11 @@ export default function QuantLabWorkspace({
                     <Download size={15} aria-hidden="true" /> Summary
                   </button>
                 </div>
+                {saveStatus === "error" ? (
+                  <p className="dataset-import__error" role="alert">
+                    This browser blocked local saving. You can still download the inputs.
+                  </p>
+                ) : null}
                 <p className="lesson-local-note">Saved locally per laboratory. No account or remote service.</p>
                 {storedScenario.needsDataReattachment && !attachment ? (
                   <p className="dataset-import__error" role="status">
@@ -298,7 +307,7 @@ export default function QuantLabWorkspace({
                 ) : null}
               </aside>
 
-              <div className="lesson-results" id="lesson-results">
+              <div className="lesson-results" id="lesson-results" tabIndex={-1}>
                 {error ? (
                   <div className="error-banner" role="alert">
                     <strong>This combination needs attention.</strong>

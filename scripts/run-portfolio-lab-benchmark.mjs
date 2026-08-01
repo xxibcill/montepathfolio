@@ -99,7 +99,9 @@ async function runBenchmarkPage(browserPath, profilePath, url) {
     return await waitForBenchmarkTitle(page.webSocketDebuggerUrl, browser);
   } catch (error) {
     if (browser.exitCode !== null && standardError) {
-      throw new Error(`Chrome exited before the benchmark completed.\n${standardError}`);
+      throw new Error(`Chrome exited before the benchmark completed.\n${standardError}`, {
+        cause: error,
+      });
     }
     throw error;
   } finally {

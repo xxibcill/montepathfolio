@@ -7,6 +7,7 @@ import {
   assertNonNegative,
   assertPositive,
   assertProbability,
+  asPriceSeries,
   asReturnSeries,
   asVarianceSeries,
   correlation,
@@ -22,6 +23,7 @@ import {
   type ModelEnvelope,
   type ModelWarning,
   type NumericMatrix,
+  type PriceSeries,
   type ReturnSeries,
   type VarianceSeries,
 } from "./core";
@@ -130,42 +132,6 @@ export function validateReturnDataset(dataset: ReturnDataset): void {
   }
 }
 
-export function parseReturnDatasetCsv(
-  csv: string,
-  options: Omit<
-    ReturnDataset,
-    "contract" | "assetIds" | "timestamps" | "rows"
-  >,
-): ReturnDataset {
-  const lines = csv
-    .trim()
-    .split(/\r?\n/)
-    .map((line) => line.split(",").map((cell) => cell.trim()));
-  if (lines.length < 3 || lines[0].length < 2) {
-    throw new QuantError(
-      "INVALID_INPUT",
-      "CSV needs a timestamp column, at least one asset, and two data rows.",
-    );
-  }
-  const assetIds = lines[0].slice(1);
-  const dataset: ReturnDataset = {
-    contract: "return-dataset@1",
-    assetIds,
-    timestamps: lines.slice(1).map((row) => row[0]),
-    rows: lines.slice(1).map((row) =>
-      row.slice(1).map((cell) => {
-        if (cell === "") {
-          throw new QuantError("INVALID_INPUT", "Missing CSV values are rejected.");
-        }
-        return Number(cell);
-      }),
-    ),
-    ...options,
-  };
-  validateReturnDataset(dataset);
-  return dataset;
-}
-
 export interface AssetDiffusionSpec {
   /** Continuously compounded annual drift in dS/S. */
   readonly annualDrift: number;
@@ -207,8 +173,8 @@ export interface JumpEvent {
 
 export interface MertonJumpDiffusionResult {
   readonly contract: "market-model/merton-jump-diffusion-result@1";
-  readonly sampledPricePaths: readonly (readonly (readonly number[])[])[];
-  readonly terminalPrices: NumericMatrix;
+  readonly sampledPricePaths: readonly (readonly PriceSeries[])[];
+  readonly terminalPrices: readonly PriceSeries[];
   readonly sampledJumpEvents: readonly JumpEvent[];
   readonly diagnostics: {
     readonly empiricalAnnualJumpCounts: readonly number[];
@@ -231,8 +197,8 @@ export function runMertonJumpDiffusion(
   const lower = factorCorrelationMatrix(input.correlation);
   const random = createSemanticRandom(input.execution.seed, input.contract);
   const sampleCount = Math.min(input.execution.samplePaths ?? 24, input.execution.paths);
-  const sampledPricePaths: number[][][] = [];
-  const terminalPrices: number[][] = [];
+  const sampledPricePaths: PriceSeries[][] = [];
+  const terminalPrices: PriceSeries[] = [];
   const sampledJumpEvents: JumpEvent[] = [];
   const jumpTotals = Array(input.assets.length).fill(0) as number[];
   const maximumDrawdowns = input.assets.map(() => [] as number[]);
@@ -283,9 +249,11 @@ export function runMertonJumpDiffusion(
           asset.annualVolatility * Math.sqrt(input.execution.stepYears) * shocks[assetIndex] +
           aggregateLogJump;
         prices[assetIndex] *= Math.exp(logGrowth);
-        if (!Number.isFinite(prices[assetIndex])) {
-          throw new QuantError("NUMERICAL_FAILURE", "Jump diffusion produced a non-finite price.");
-        }
+        assertFiniteSimulationValue(
+          prices[assetIndex],
+          `terminalPrices.${pathIndex}.${assetIndex}`,
+          "Jump-diffusion price overflowed. Reduce the horizon, volatility, or jump size.",
+        );
         path[assetIndex].push(prices[assetIndex]);
         peaks[assetIndex] = Math.max(peaks[assetIndex], prices[assetIndex]);
         pathMaximumDrawdowns[assetIndex] = Math.max(
@@ -306,8 +274,8 @@ export function runMertonJumpDiffusion(
         }
       });
     }
-    if (pathIndex < sampleCount) sampledPricePaths.push(path);
-    terminalPrices.push([...prices]);
+    if (pathIndex < sampleCount) sampledPricePaths.push(path.map(asPriceSeries));
+    terminalPrices.push(asPriceSeries([...prices]));
     pathMaximumDrawdowns.forEach((drawdown, assetIndex) => {
       maximumDrawdowns[assetIndex].push(drawdown);
       if (pathContainsJump[assetIndex]) {
@@ -418,6 +386,11 @@ export function runGarch(input: GarchInput): ModelEnvelope<GarchResult> {
           parameters.beta * conditionalVariance;
       }
       conditionalVariance = Math.max(0, conditionalVariance);
+      assertFiniteSimulationValue(
+        conditionalVariance,
+        `sampledConditionalVariances.${pathIndex}.${stepIndex}`,
+        "GARCH variance recurrence overflowed. Reduce the coefficients or initial variance.",
+      );
       const standardizedInnovation = standardizedGarchInnovation(
         input.innovation,
         random,
@@ -426,6 +399,11 @@ export function runGarch(input: GarchInput): ModelEnvelope<GarchResult> {
       );
       priorInnovation = Math.sqrt(conditionalVariance) * standardizedInnovation;
       const value = parameters.meanReturn + priorInnovation;
+      assertFiniteSimulationValue(
+        value,
+        `sampledReturns.${pathIndex}.${stepIndex}`,
+        "GARCH return recurrence overflowed. Reduce the coefficients or initial variance.",
+      );
       if (pathIndex < sampleCount) {
         returns.push(value);
         variances.push(conditionalVariance);
@@ -471,10 +449,21 @@ export function buildGarchVolatilityCone(
   let forecast = latestVariance;
   return Array.from({ length: horizonSteps }, (_, index) => {
     forecast = parameters.omega + persistence * forecast;
+    assertFiniteSimulationValue(
+      forecast,
+      `volatilityCone.${index}.expectedVariance`,
+      "GARCH volatility forecast overflowed. Reduce the coefficients, horizon, or latest variance.",
+    );
+    const annualizedVolatility = Math.sqrt(Math.max(0, forecast) * periodsPerYear);
+    assertFiniteSimulationValue(
+      annualizedVolatility,
+      `volatilityCone.${index}.annualizedVolatility`,
+      "GARCH annualized volatility overflowed.",
+    );
     return {
       step: index + 1,
       expectedVariance: forecast,
-      annualizedVolatility: Math.sqrt(Math.max(0, forecast) * periodsPerYear),
+      annualizedVolatility,
     };
   });
 }
@@ -900,7 +889,7 @@ export interface CompositeMarketInput {
 
 export interface CompositeMarketResult {
   readonly contract: "market-model/hmm-garch-copula-jump-result@1";
-  readonly sampledPrices: readonly (readonly (readonly number[])[])[];
+  readonly sampledPrices: readonly (readonly PriceSeries[])[];
   readonly diagnostics: {
     readonly sampledRegimes: NumericMatrix;
     readonly sampledVariances: readonly NumericMatrix[];
@@ -921,7 +910,7 @@ export function runCompositeMarket(
         Array.from({ length: dimension }, (_, column) => Number(row === column)),
       );
   const sampleCount = Math.min(input.execution.samplePaths ?? 16, input.execution.paths);
-  const sampledPrices: number[][][] = [];
+  const sampledPrices: PriceSeries[][] = [];
   const sampledRegimes: number[][] = [];
   const sampledVariances: number[][][] = [];
   const jumpEvents: JumpEvent[] = [];
@@ -960,6 +949,11 @@ export function runCompositeMarket(
             parameters.omega +
               parameters.alpha * priorInnovations[assetIndex] ** 2 +
               parameters.beta * variances[assetIndex],
+          );
+          assertFiniteSimulationValue(
+            variances[assetIndex],
+            `sampledVariances.${pathIndex}.${assetIndex}.${stepIndex}`,
+            "Composite GARCH variance overflowed. Reduce the variance coefficients.",
           );
         }
       }
@@ -1032,6 +1026,11 @@ export function runCompositeMarket(
             priorInnovations[assetIndex] +
             aggregateLogJump,
         );
+        assertFiniteSimulationValue(
+          prices[assetIndex],
+          `sampledPrices.${pathIndex}.${assetIndex}.${stepIndex}`,
+          "Composite market price overflowed. Reduce the horizon or model scale.",
+        );
         paths[assetIndex].push(prices[assetIndex]);
         variancePaths[assetIndex].push(variance);
         if (pathIndex < sampleCount && count > 0) {
@@ -1040,7 +1039,7 @@ export function runCompositeMarket(
       }
     }
     if (pathIndex < sampleCount) {
-      sampledPrices.push(paths);
+      sampledPrices.push(paths.map(asPriceSeries));
       sampledRegimes.push(regimePath);
       sampledVariances.push(variancePaths);
     }
@@ -1132,7 +1131,14 @@ function validateJumpInput(input: MertonJumpDiffusionInput): void {
   if (input.correlation.length !== dimension) {
     throw new QuantError("DIMENSION_MISMATCH", "Correlation dimensions must match assets.");
   }
-  validateExecution(input.execution);
+  validateExecution(input.execution, {
+    assets: dimension,
+    retainedValues:
+      input.execution.paths * dimension +
+      Math.min(input.execution.samplePaths ?? 24, input.execution.paths) *
+        dimension *
+        (input.execution.steps + 1),
+  });
 }
 
 function validateGarchInput(input: GarchInput): ModelWarning[] {
@@ -1144,13 +1150,27 @@ function validateGarchInput(input: GarchInput): ModelWarning[] {
   assertNonNegative(parameters.alpha, "parameters.alpha");
   assertNonNegative(parameters.beta, "parameters.beta");
   assertFinite(parameters.meanReturn, "parameters.meanReturn");
+  const persistence = parameters.alpha + parameters.beta;
+  if (!Number.isFinite(persistence)) {
+    throw new QuantError(
+      "OUT_OF_RANGE",
+      "GARCH alpha + beta must remain finite.",
+      "parameters",
+    );
+  }
   if (input.initialVariance !== "unconditional") {
     assertNonNegative(input.initialVariance, "initialVariance");
-  } else if (parameters.alpha + parameters.beta >= 1) {
+  } else if (persistence >= 1) {
     throw new QuantError(
       "INVALID_INPUT",
       "Unconditional initial variance requires alpha + beta below one.",
     );
+  }
+  if (!(["gaussian", "student-t"] as readonly unknown[]).includes(input.innovation.kind)) {
+    throw new QuantError("INVALID_INPUT", "Unsupported GARCH innovation kind.", "innovation.kind");
+  }
+  if (input.innovation.kind === "student-t") {
+    assertFinite(input.innovation.degreesOfFreedom, "innovation.degreesOfFreedom");
   }
   if (input.innovation.kind === "student-t" && input.innovation.degreesOfFreedom <= 2) {
     throw new QuantError(
@@ -1158,12 +1178,17 @@ function validateGarchInput(input: GarchInput): ModelWarning[] {
       "Student-t degrees of freedom must exceed two so variance exists.",
     );
   }
-  assertIntegerInRange(input.execution.paths, 1, 10_000, "execution.paths");
-  assertIntegerInRange(input.execution.steps, 1, 10_000, "execution.steps");
-  if (input.execution.paths * input.execution.steps > 5_000_000) {
-    throw new QuantError("OUT_OF_RANGE", "GARCH request exceeds the five-million-step limit.");
-  }
-  return parameters.alpha + parameters.beta >= 1
+  validateExecution(
+    { ...input.execution, stepYears: 1 },
+    {
+      retainedValues:
+        2 *
+          Math.min(input.execution.samplePaths ?? 32, input.execution.paths) *
+          input.execution.steps +
+        input.execution.steps,
+    },
+  );
+  return persistence >= 1
     ? [{
         code: "STATIONARITY",
         message: "alpha + beta is at least one, so unconditional variance does not exist.",
@@ -1257,6 +1282,14 @@ function validateCompositeInput(input: CompositeMarketInput): void {
     assertPositive(parameters.omega, `garch.${index}.omega`);
     assertNonNegative(parameters.alpha, `garch.${index}.alpha`);
     assertNonNegative(parameters.beta, `garch.${index}.beta`);
+    assertFinite(parameters.meanReturn, `garch.${index}.meanReturn`);
+    if (!Number.isFinite(parameters.alpha + parameters.beta)) {
+      throw new QuantError(
+        "OUT_OF_RANGE",
+        "Composite GARCH alpha + beta must remain finite.",
+        `garch.${index}`,
+      );
+    }
   });
   input.jumps.forEach((jump, index) => {
     assertNonNegative(jump.annualIntensity, `jumps.${index}.annualIntensity`);
@@ -1267,22 +1300,94 @@ function validateCompositeInput(input: CompositeMarketInput): void {
   if (input.copula.correlation.length !== dimension) {
     throw new QuantError("DIMENSION_MISMATCH", "Copula dimensions must match assets.");
   }
+  if (!(["gaussian", "student-t"] as readonly unknown[]).includes(input.copula.kind)) {
+    throw new QuantError("INVALID_INPUT", "Unsupported copula kind.", "copula.kind");
+  }
+  if (input.copula.kind === "student-t") {
+    assertFinite(
+      input.copula.degreesOfFreedom ?? Number.NaN,
+      "copula.degreesOfFreedom",
+    );
+  }
   if (input.copula.kind === "student-t" && (input.copula.degreesOfFreedom ?? 0) <= 2) {
     throw new QuantError("OUT_OF_RANGE", "Student-t copula degrees of freedom must exceed two.");
   }
-  validateExecution(input.execution);
+  (["regimes", "dynamicVariance", "dependence", "jumps"] as const).forEach(
+    (key) => {
+      if (typeof input.enabled[key] !== "boolean") {
+        throw new QuantError(
+          "INVALID_INPUT",
+          `enabled.${key} must be a boolean.`,
+          `enabled.${key}`,
+        );
+      }
+    },
+  );
+  const sampleCount = Math.min(
+    input.execution.samplePaths ?? 16,
+    input.execution.paths,
+  );
+  validateExecution(input.execution, {
+    assets: dimension,
+    retainedValues:
+      sampleCount *
+      ((2 * dimension + 1) * (input.execution.steps + 1)),
+  });
 }
 
+const MAX_SIMULATION_WORK = 5_000_000;
+const MAX_RETAINED_VALUES = 5_000_000;
+
 function validateExecution(execution: {
+  readonly seed?: number;
   readonly paths: number;
   readonly steps: number;
   readonly stepYears: number;
-}): void {
+  readonly samplePaths?: number;
+}, limits: {
+  readonly assets?: number;
+  readonly retainedValues?: number;
+} = {}): void {
+  if (execution.seed !== undefined) assertFinite(execution.seed, "execution.seed");
   assertIntegerInRange(execution.paths, 1, 10_000, "execution.paths");
   assertIntegerInRange(execution.steps, 1, 10_000, "execution.steps");
   assertPositive(execution.stepYears, "execution.stepYears");
-  if (execution.paths * execution.steps > 5_000_000) {
-    throw new QuantError("OUT_OF_RANGE", "The requested simulation exceeds the 5,000,000-step resource limit.");
+  if (execution.samplePaths !== undefined) {
+    assertIntegerInRange(
+      execution.samplePaths,
+      0,
+      execution.paths,
+      "execution.samplePaths",
+    );
+  }
+  const work = execution.paths * execution.steps * (limits.assets ?? 1);
+  if (!Number.isSafeInteger(work) || work > MAX_SIMULATION_WORK) {
+    throw new QuantError(
+      "OUT_OF_RANGE",
+      "The requested simulation exceeds the 5,000,000 asset-step resource limit.",
+      "execution",
+    );
+  }
+  if (
+    limits.retainedValues !== undefined &&
+    (!Number.isSafeInteger(limits.retainedValues) ||
+      limits.retainedValues > MAX_RETAINED_VALUES)
+  ) {
+    throw new QuantError(
+      "OUT_OF_RANGE",
+      "The requested sampled output exceeds the 5,000,000-value retention limit. Reduce samplePaths or steps.",
+      "execution.samplePaths",
+    );
+  }
+}
+
+function assertFiniteSimulationValue(
+  value: number,
+  path: string,
+  message: string,
+): void {
+  if (!Number.isFinite(value)) {
+    throw new QuantError("NUMERICAL_FAILURE", message, path);
   }
 }
 

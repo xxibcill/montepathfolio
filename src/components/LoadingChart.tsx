@@ -1,6 +1,6 @@
-export function LoadingChart() {
+export function LoadingChart({ label = "Preparing results…" }: { readonly label?: string }) {
   return (
-    <div className="loading-chart" aria-label="Calculating portfolio paths">
+    <div className="loading-chart" aria-label={label}>
       <div className="loading-chart__plot" aria-hidden="true">
         <span />
         <span />
@@ -8,7 +8,7 @@ export function LoadingChart() {
         <span />
         <span />
       </div>
-      <p>Calculating 1,000 futures…</p>
+      <p>{label}</p>
     </div>
   );
 }

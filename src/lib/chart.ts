@@ -24,6 +24,11 @@ export const CHART_COLORS = {
   get bandOutline() { return themeAlpha("rgba(41, 51, 45, 0.42)", "rgba(226, 232, 226, 0.5)"); },
   get percentileLine() { return themeAlpha("rgba(41, 51, 45, 0.48)", "rgba(226, 232, 226, 0.6)"); },
   get vermilion() { return themeColor("--vermilion", "#a94734"); },
+  get representativePaths() {
+    return typeof document !== "undefined" && document.documentElement.dataset.theme === "dark"
+      ? ["#5eead4", "#fdba74", "#c4b5fd", "#7dd3fc", "#fde047", "#f9a8d4"]
+      : ["#0f766e", "#9a3412", "#6d28d9", "#075985", "#854d0e", "#9d174d"];
+  },
 };
 
 export const compactCurrency = new Intl.NumberFormat("en-US", {

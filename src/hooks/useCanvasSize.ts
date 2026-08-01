@@ -36,6 +36,8 @@ export function useCanvasSize({
       return;
     }
 
+    let animationFrame = 0;
+    let pendingWidth: number | undefined;
     const measure = (observedWidth?: number) => {
       const measuredWidth =
         observedWidth ?? container.getBoundingClientRect().width;
@@ -43,7 +45,7 @@ export function useCanvasSize({
       const height = Math.round(
         Math.min(maxHeight, Math.max(minHeight, width / aspectRatio)),
       );
-      const dpr = Math.max(1, window.devicePixelRatio || 1);
+      const dpr = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
 
       setSize((current) => {
         if (
@@ -58,19 +60,32 @@ export function useCanvasSize({
       });
     };
 
+    const scheduleMeasure = (observedWidth?: number) => {
+      pendingWidth = observedWidth;
+      if (animationFrame) return;
+      animationFrame = window.requestAnimationFrame(() => {
+        animationFrame = 0;
+        measure(pendingWidth);
+        pendingWidth = undefined;
+      });
+    };
+
     measure();
 
-    const onWindowResize = () => measure();
+    const onWindowResize = () => scheduleMeasure();
     window.addEventListener("resize", onWindowResize);
 
     if (typeof ResizeObserver === "undefined") {
-      return () => window.removeEventListener("resize", onWindowResize);
+      return () => {
+        if (animationFrame) window.cancelAnimationFrame(animationFrame);
+        window.removeEventListener("resize", onWindowResize);
+      };
     }
 
     const observer = new ResizeObserver((entries) => {
       const entry = entries[0];
       if (entry) {
-        measure(entry.contentRect.width);
+        scheduleMeasure(entry.contentRect.width);
       }
     });
 
@@ -78,6 +93,7 @@ export function useCanvasSize({
 
     return () => {
       observer.disconnect();
+      if (animationFrame) window.cancelAnimationFrame(animationFrame);
       window.removeEventListener("resize", onWindowResize);
     };
   }, [aspectRatio, maxHeight, minHeight]);

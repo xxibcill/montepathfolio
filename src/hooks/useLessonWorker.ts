@@ -9,6 +9,7 @@ import type {
   LessonCalibrationSnapshot,
   LessonOutput,
 } from "../labs/lesson-types";
+import { createLessonWorker } from "../workers/lesson-worker-factory";
 
 export type LessonRunStatus = "current" | "changed" | "running" | "error";
 
@@ -117,7 +118,7 @@ export function useLessonWorker(
   useEffect(() => {
     let worker: Worker;
     try {
-      worker = createLessonWorker();
+      worker = createLessonWorker(lessonId);
     } catch {
       queueMicrotask(() => {
         setState((current) => ({
@@ -177,7 +178,7 @@ export function useLessonWorker(
       let worker = workerRef.current;
       if (!worker) {
         try {
-          worker = createLessonWorker();
+          worker = createLessonWorker(lessonId);
         } catch {
           setState((current) => ({
             ...current,
@@ -235,13 +236,6 @@ export function useLessonWorker(
   }, []);
 
   return { ...state, run, cancel };
-}
-
-function createLessonWorker(): Worker {
-  return new Worker(
-    new URL("../workers/lesson.worker.ts", import.meta.url),
-    { type: "module" },
-  );
 }
 
 function loadingOutput(): LessonOutput {

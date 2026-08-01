@@ -75,8 +75,8 @@ React laboratory index and lazy chapter routes
 
 - [`src/labs/catalog.ts`](src/labs/catalog.ts) defines the six laboratories,
   chapter learning material, input units, bounds, and illustrative presets.
-- [`src/workers/lesson.worker.ts`](src/workers/lesson.worker.ts) runs advanced
-  chapter calculations off the interface thread. Its protocol returns structured
+- The laboratory-family workers in [`src/workers`](src/workers) run advanced
+  chapter calculations off the interface thread without loading unrelated model engines. Their protocol returns structured
   failures, validates bounded optional data attachments, and the React hook
   handles cancellation and stale responses.
 - [`src/lib/quant`](src/lib/quant) owns the standalone market, risk,
@@ -121,9 +121,15 @@ Or run each stage separately:
 
 ```bash
 npm run lint
+npm run typecheck:benchmarks
 npm test
 npm run build
+npm run test:routes
 ```
+
+`npm run check` covers lint, application and benchmark type-checking, tests, and
+the production build. The separate route smoke command launches Chrome to crawl
+every chapter and verify navigation, focus, contrast, and touch-target contracts.
 
 Test watch mode is available through `npm run test:watch`. The tests emphasize
 hand-calculated fixtures, analytical and limiting cases, fixed-seed statistical
