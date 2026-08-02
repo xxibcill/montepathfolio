@@ -197,7 +197,6 @@ a {
 
 .text-link {
   min-height: 2.75rem;
-  min-height: 2.75rem;
   gap: var(--space-2);
   font-size: var(--text-sm);
   font-weight: 600;
@@ -1657,7 +1656,7 @@ a {
 }
 
 .model-comparison thead th[data-selected="true"] {
-  color: var(--forest-dark);
+  color: var(--forest);
 }
 
 .model-comparison thead small {
@@ -2123,6 +2122,7 @@ footer {
   select,
   summary,
   a {
+    min-width: 2.75rem;
     min-height: 2.75rem;
   }
 

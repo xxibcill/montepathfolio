@@ -2,19 +2,18 @@ import {
   runBinomialLesson,
   runBlackScholesLesson,
   runHestonLesson,
-  runLessonWithRunners,
   runMonteCarloOptionLesson,
   runStrategyLesson,
 } from "../labs/lesson-runners";
-import { registerLessonWorker } from "./register-lesson-worker";
+import { defineLessonRunners } from "./lesson-worker-registry";
+import { registerLessonRunners } from "./register-lesson-worker";
 
-const runners = {
+const runners = defineLessonRunners<"derivatives">({
   "black-scholes": runBlackScholesLesson,
   "binomial-tree": runBinomialLesson,
   "monte-carlo-options": runMonteCarloOptionLesson,
   heston: runHestonLesson,
   "strategy-builder": runStrategyLesson,
-};
-registerLessonWorker((id, values, attachment, snapshot) =>
-  runLessonWithRunners(id, values, runners, attachment, snapshot),
-);
+});
+
+registerLessonRunners(runners);

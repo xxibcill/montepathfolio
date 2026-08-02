@@ -155,6 +155,25 @@ describe("Merton jump diffusion", () => {
       }),
     ).toThrow(/samplePaths/);
   });
+
+  it("preflights stochastic jump-event work before sampling", () => {
+    expect(() =>
+      runMertonJumpDiffusion({
+        ...input,
+        jumps: [{
+          ...input.jumps[0],
+          annualIntensity: 1_000_000_000,
+        }],
+        execution: {
+          ...input.execution,
+          paths: 1,
+          steps: 1,
+          stepYears: 1,
+          samplePaths: 1,
+        },
+      }),
+    ).toThrow(/event resource limit/);
+  });
 });
 
 describe("GARCH(1,1)", () => {
@@ -296,6 +315,31 @@ describe("historical bootstrap and copulas", () => {
     for (const row of result.sampledRows[0]) {
       expect(dataset.rows.some((source) => source[0] === row[0])).toBe(true);
     }
+  });
+
+  it("counts source indexes in the bootstrap retention limit", () => {
+    const assetCount = 100_000;
+    const wideDataset: ReturnDataset = {
+      ...dataset,
+      assetIds: Array.from(
+        { length: assetCount },
+        (_, index) => `asset-${index}`,
+      ),
+      timestamps: dataset.timestamps.slice(0, 2),
+      rows: [Array(assetCount).fill(0.01), Array(assetCount).fill(-0.01)],
+    };
+
+    expect(() =>
+      runHistoricalBootstrap({
+        contract: "market-model/historical-bootstrap@1",
+        dataset: wideDataset,
+        method: { kind: "iid" },
+        seed: 4,
+        paths: 1,
+        steps: 50,
+        samplePaths: 1,
+      }),
+    ).toThrow(/retention limit/);
   });
 
   it("recovers Gaussian dependence and shows stronger t-copula lower tails", () => {
@@ -521,5 +565,24 @@ describe("sanctioned HMM → GARCH → copula → jump pipeline", () => {
         },
       }),
     ).toThrow(/asset-step/);
+  });
+
+  it("preflights composite jump-event work before sampling", () => {
+    expect(() =>
+      runCompositeMarket({
+        ...input,
+        jumps: input.jumps.map((jump) => ({
+          ...jump,
+          annualIntensity: 1_000_000_000,
+        })),
+        execution: {
+          ...input.execution,
+          paths: 1,
+          steps: 1,
+          stepYears: 1,
+          samplePaths: 1,
+        },
+      }),
+    ).toThrow(/event resource limit/);
   });
 });

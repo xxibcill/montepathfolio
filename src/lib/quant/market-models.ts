@@ -30,6 +30,11 @@ import {
 
 export const MARKET_MODELS_VERSION = "market-models@1";
 
+const MAX_SIMULATION_WORK = 5_000_000;
+const MAX_RETAINED_VALUES = 5_000_000;
+const MAX_JUMP_EVENTS_PER_ASSET_STEP = 100_000;
+const RETAINED_VALUES_PER_JUMP_EVENT = 5;
+
 export type ReturnConvention = "simple" | "log";
 export type ObservationFrequency = "daily" | "weekly" | "monthly" | "annual";
 
@@ -226,6 +231,7 @@ export function runMertonJumpDiffusion(
           stepIndex,
           assetIndex,
         );
+        assertBoundedJumpCount(count);
         let aggregateLogJump = 0;
         for (let eventIndex = 0; eventIndex < count; eventIndex += 1) {
           aggregateLogJump +=
@@ -669,8 +675,12 @@ export function runHistoricalBootstrap(
       "method.blockSize",
     );
   }
-  const random = createSemanticRandom(input.seed, input.contract);
   const sampleCount = Math.min(input.samplePaths ?? 32, input.paths);
+  assertRetainedValueLimit(
+    sampleCount * input.steps * (input.dataset.assetIds.length + 1),
+    "samplePaths",
+  );
+  const random = createSemanticRandom(input.seed, input.contract);
   const sampledRows: number[][][] = [];
   const sampledSourceIndexes: number[][] = [];
   for (let pathIndex = 0; pathIndex < sampleCount; pathIndex += 1) {
@@ -1006,6 +1016,7 @@ export function runCompositeMarket(
               assetIndex,
             )
           : 0;
+        assertBoundedJumpCount(count);
         let aggregateLogJump = 0;
         for (let eventIndex = 0; eventIndex < count; eventIndex += 1) {
           aggregateLogJump +=
@@ -1133,11 +1144,17 @@ function validateJumpInput(input: MertonJumpDiffusionInput): void {
   }
   validateExecution(input.execution, {
     assets: dimension,
+    additionalWork: expectedJumpEventWork(input.jumps, input.execution),
     retainedValues:
       input.execution.paths * dimension +
       Math.min(input.execution.samplePaths ?? 24, input.execution.paths) *
         dimension *
-        (input.execution.steps + 1),
+        (input.execution.steps + 1) +
+      retainedJumpEventValues(
+        input.jumps,
+        input.execution,
+        Math.min(input.execution.samplePaths ?? 24, input.execution.paths),
+      ),
   });
 }
 
@@ -1329,14 +1346,17 @@ function validateCompositeInput(input: CompositeMarketInput): void {
   );
   validateExecution(input.execution, {
     assets: dimension,
+    additionalWork: input.enabled.jumps
+      ? expectedJumpEventWork(input.jumps, input.execution)
+      : 0,
     retainedValues:
       sampleCount *
-      ((2 * dimension + 1) * (input.execution.steps + 1)),
+        ((2 * dimension + 1) * (input.execution.steps + 1)) +
+      (input.enabled.jumps
+        ? retainedJumpEventValues(input.jumps, input.execution, sampleCount)
+        : 0),
   });
 }
-
-const MAX_SIMULATION_WORK = 5_000_000;
-const MAX_RETAINED_VALUES = 5_000_000;
 
 function validateExecution(execution: {
   readonly seed?: number;
@@ -1346,6 +1366,7 @@ function validateExecution(execution: {
   readonly samplePaths?: number;
 }, limits: {
   readonly assets?: number;
+  readonly additionalWork?: number;
   readonly retainedValues?: number;
 } = {}): void {
   if (execution.seed !== undefined) assertFinite(execution.seed, "execution.seed");
@@ -1360,23 +1381,83 @@ function validateExecution(execution: {
       "execution.samplePaths",
     );
   }
-  const work = execution.paths * execution.steps * (limits.assets ?? 1);
-  if (!Number.isSafeInteger(work) || work > MAX_SIMULATION_WORK) {
-    throw new QuantError(
-      "OUT_OF_RANGE",
-      "The requested simulation exceeds the 5,000,000 asset-step resource limit.",
-      "execution",
-    );
-  }
+  const assetStepWork =
+    execution.paths * execution.steps * (limits.assets ?? 1);
+  const additionalWork = limits.additionalWork ?? 0;
+  const totalWork = assetStepWork + additionalWork;
   if (
-    limits.retainedValues !== undefined &&
-    (!Number.isSafeInteger(limits.retainedValues) ||
-      limits.retainedValues > MAX_RETAINED_VALUES)
+    !Number.isSafeInteger(assetStepWork) ||
+    !Number.isFinite(additionalWork) ||
+    additionalWork < 0 ||
+    totalWork > MAX_SIMULATION_WORK
   ) {
     throw new QuantError(
       "OUT_OF_RANGE",
-      "The requested sampled output exceeds the 5,000,000-value retention limit. Reduce samplePaths or steps.",
+      "The requested simulation exceeds the 5,000,000 asset-step/event resource limit.",
+      "execution",
+    );
+  }
+  if (limits.retainedValues !== undefined) {
+    assertRetainedValueLimit(
+      limits.retainedValues,
       "execution.samplePaths",
+    );
+  }
+}
+
+function expectedJumpEventWork(
+  jumps: readonly JumpSpec[],
+  execution: {
+    readonly paths: number;
+    readonly steps: number;
+    readonly stepYears: number;
+  },
+): number {
+  const annualIntensity = jumps.reduce(
+    (total, jump) => total + jump.annualIntensity,
+    0,
+  );
+  return (
+    execution.paths *
+    execution.steps *
+    execution.stepYears *
+    annualIntensity
+  );
+}
+
+function retainedJumpEventValues(
+  jumps: readonly JumpSpec[],
+  execution: { readonly steps: number },
+  sampleCount: number,
+): number {
+  if (!jumps.some(({ annualIntensity }) => annualIntensity > 0)) return 0;
+  return (
+    sampleCount *
+    execution.steps *
+    jumps.length *
+    RETAINED_VALUES_PER_JUMP_EVENT
+  );
+}
+
+function assertRetainedValueLimit(value: number, path: string): void {
+  if (!Number.isSafeInteger(value) || value > MAX_RETAINED_VALUES) {
+    throw new QuantError(
+      "OUT_OF_RANGE",
+      "The requested sampled output exceeds the 5,000,000-value retention limit. Reduce samplePaths or steps.",
+      path,
+    );
+  }
+}
+
+function assertBoundedJumpCount(count: number): void {
+  if (
+    !Number.isSafeInteger(count) ||
+    count > MAX_JUMP_EVENTS_PER_ASSET_STEP
+  ) {
+    throw new QuantError(
+      "OUT_OF_RANGE",
+      "Sampled jump count exceeded the per-step event resource limit.",
+      "jumps.annualIntensity",
     );
   }
 }

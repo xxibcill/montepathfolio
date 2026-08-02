@@ -123,6 +123,13 @@ export type LessonRunner = (
   calibrationSnapshot?: LessonCalibrationSnapshot,
 ) => LessonOutput;
 
+export interface LessonRunRequest {
+  readonly id: string;
+  readonly values: Readonly<Record<string, number>>;
+  readonly attachment?: LessonDataAttachment;
+  readonly calibrationSnapshot?: LessonCalibrationSnapshot;
+}
+
 const runners: Readonly<Record<string, LessonRunner>> = {
   "jump-diffusion": runJumpDiffusionLesson,
   garch: runGarchLesson,
@@ -195,32 +202,30 @@ export function runLesson(
   attachment?: LessonDataAttachment,
   calibrationSnapshot?: LessonCalibrationSnapshot,
 ): LessonOutput {
-  const validatedValues = validateLessonValues(id, values);
-  const runner = runners[id];
-  if (!runner) throw new Error(`Lesson ${id} has no calculation runner.`);
-  const output = runner(
-    validatedValues,
-    attachment,
-    calibrationSnapshot,
+  return runLessonWithRunners(
+    { id, values, attachment, calibrationSnapshot },
+    runners,
   );
-  const chartAxes = output.chartAxes ?? PRIMARY_CHART_AXES[id];
-  if (!chartAxes) throw new Error(`No chart semantics are registered for ${id}.`);
-  return { ...output, chartAxes };
 }
 
 export function runLessonWithRunners(
-  id: string,
-  values: Readonly<Record<string, number>>,
+  request: LessonRunRequest,
   availableRunners: Readonly<Record<string, LessonRunner>>,
-  attachment?: LessonDataAttachment,
-  calibrationSnapshot?: LessonCalibrationSnapshot,
 ): LessonOutput {
-  const validatedValues = validateLessonValues(id, values);
-  const runner = availableRunners[id];
-  if (!runner) throw new Error(`Lesson ${id} is not available in this worker.`);
-  const output = runner(validatedValues, attachment, calibrationSnapshot);
-  const chartAxes = output.chartAxes ?? PRIMARY_CHART_AXES[id];
-  if (!chartAxes) throw new Error(`No chart semantics are registered for ${id}.`);
+  const validatedValues = validateLessonValues(request.id, request.values);
+  const runner = availableRunners[request.id];
+  if (!runner) {
+    throw new Error(`Lesson ${request.id} is not available in this worker.`);
+  }
+  const output = runner(
+    validatedValues,
+    request.attachment,
+    request.calibrationSnapshot,
+  );
+  const chartAxes = output.chartAxes ?? PRIMARY_CHART_AXES[request.id];
+  if (!chartAxes) {
+    throw new Error(`No chart semantics are registered for ${request.id}.`);
+  }
   return { ...output, chartAxes };
 }
 

@@ -1,18 +1,17 @@
 import {
   runAgentMarketLesson,
   runExecutionLesson,
-  runLessonWithRunners,
   runOrderBookLesson,
   runOuLesson,
 } from "../labs/lesson-runners";
-import { registerLessonWorker } from "./register-lesson-worker";
+import { defineLessonRunners } from "./lesson-worker-registry";
+import { registerLessonRunners } from "./register-lesson-worker";
 
-const runners = {
+const runners = defineLessonRunners<"trading">({
   "ornstein-uhlenbeck": runOuLesson,
   "order-book": runOrderBookLesson,
   "agent-market": runAgentMarketLesson,
   "optimal-execution": runExecutionLesson,
-};
-registerLessonWorker((id, values, attachment, snapshot) =>
-  runLessonWithRunners(id, values, runners, attachment, snapshot),
-);
+});
+
+registerLessonRunners(runners);

@@ -4,14 +4,14 @@ import {
   runCopulaLesson,
   runGarchLesson,
   runJumpDiffusionLesson,
-  runLessonWithRunners,
   runRegimeLesson,
   runRetirementLesson,
   runStudentTLesson,
 } from "../labs/lesson-runners";
-import { registerLessonWorker } from "./register-lesson-worker";
+import { defineLessonRunners } from "./lesson-worker-registry";
+import { registerLessonRunners } from "./register-lesson-worker";
 
-const runners = {
+const runners = defineLessonRunners<"projection">({
   "jump-diffusion": runJumpDiffusionLesson,
   garch: runGarchLesson,
   "historical-bootstrap": runBootstrapLesson,
@@ -20,7 +20,6 @@ const runners = {
   "student-t": runStudentTLesson,
   copulas: runCopulaLesson,
   "composite-market": runCompositeLesson,
-};
-registerLessonWorker((id, values, attachment, snapshot) =>
-  runLessonWithRunners(id, values, runners, attachment, snapshot),
-);
+});
+
+registerLessonRunners(runners);

@@ -7,6 +7,10 @@ import {
   type LessonWorkerResponse,
 } from "../labs/lesson-worker-protocol";
 import type { LessonOutput } from "../labs/lesson-types";
+import {
+  runLessonWithRunners,
+  type LessonRunner,
+} from "../labs/lesson-runners";
 
 type RunLesson = (
   id: string,
@@ -14,6 +18,17 @@ type RunLesson = (
   attachment?: LessonWorkerRequest["attachment"],
   calibrationSnapshot?: LessonWorkerRequest["calibrationSnapshot"],
 ) => LessonOutput;
+
+export function registerLessonRunners(
+  runners: Readonly<Record<string, LessonRunner>>,
+): void {
+  registerLessonWorker((id, values, attachment, calibrationSnapshot) =>
+    runLessonWithRunners(
+      { id, values, attachment, calibrationSnapshot },
+      runners,
+    ),
+  );
+}
 
 export function registerLessonWorker(runLesson: RunLesson): void {
   self.onmessage = (event: MessageEvent<LessonWorkerRequest>) => {

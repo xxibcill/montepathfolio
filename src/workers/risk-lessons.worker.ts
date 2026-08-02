@@ -1,7 +1,10 @@
-import { runBacktestingLesson, runLessonWithRunners, runVarLesson } from "../labs/lesson-runners";
-import { registerLessonWorker } from "./register-lesson-worker";
+import { runBacktestingLesson, runVarLesson } from "../labs/lesson-runners";
+import { defineLessonRunners } from "./lesson-worker-registry";
+import { registerLessonRunners } from "./register-lesson-worker";
 
-const runners = { "var-cvar": runVarLesson, "risk-backtesting": runBacktestingLesson };
-registerLessonWorker((id, values, attachment, snapshot) =>
-  runLessonWithRunners(id, values, runners, attachment, snapshot),
-);
+const runners = defineLessonRunners<"risk">({
+  "var-cvar": runVarLesson,
+  "risk-backtesting": runBacktestingLesson,
+});
+
+registerLessonRunners(runners);
