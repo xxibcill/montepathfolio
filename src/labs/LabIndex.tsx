@@ -8,6 +8,9 @@ import {
   Waves,
 } from "lucide-react";
 import { LabMasthead } from "../components/LabMasthead";
+import { InPageLink } from "../components/InPageLink";
+import { usePageFocus } from "../hooks/usePageFocus";
+import { useRef } from "react";
 import { LABS } from "./catalog";
 import { labHref, type LabId } from "./routes";
 
@@ -21,14 +24,21 @@ const LAB_ICONS: Readonly<Record<LabId, typeof Waves>> = {
 };
 
 export function LabIndex() {
+  const mainRef = useRef<HTMLElement>(null);
+  usePageFocus("home", mainRef);
   return (
     <>
-      <a className="skip-link" href="#lab-index">
+      <InPageLink className="skip-link" targetId="lab-index">
         Skip to laboratory index
-      </a>
+      </InPageLink>
       <div className="app-shell atlas-shell">
         <LabMasthead />
-        <main id="lab-index">
+        <main
+          id="lab-index"
+          ref={mainRef}
+          tabIndex={-1}
+          data-route-key="home"
+        >
           <section className="atlas-opening">
             <div className="opening__kicker">
               <span>

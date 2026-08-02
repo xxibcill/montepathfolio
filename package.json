@@ -2,6 +2,10 @@
   "name": "portfolio-risk-sandbox",
   "private": true,
   "version": "0.1.0",
+  "packageManager": "npm@10.9.8",
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,9 +13,11 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
+    "typecheck:benchmarks": "tsc -p tsconfig.benchmarks.json",
+    "test:routes": "node scripts/smoke-routes.mjs",
     "benchmark:portfolio": "node scripts/run-portfolio-lab-benchmark.mjs",
     "benchmark:release1": "node scripts/run-portfolio-lab-benchmark.mjs release1",
-    "check": "npm run lint && npm run test && npm run build"
+    "check": "npm run lint && npm run typecheck:benchmarks && npm run test && npm run build"
   },
   "dependencies": {
     "@fontsource-variable/instrument-sans": "^5.2.6",

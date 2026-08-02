@@ -14,6 +14,9 @@ import {
   assertNonNegative,
   assertPositive,
   assertProbability,
+  asRateSeries,
+  asTimeSeries,
+  asYieldSeries,
   clamp,
   createSemanticRandom,
   normalCdf,
@@ -21,13 +24,16 @@ import {
   type ModelEnvelope,
   type ModelWarning,
   type SemanticRandom,
+  type RateSeries,
+  type TimeSeries,
+  type YieldSeries,
 } from "./core";
 import {
   evaluateBlackScholes,
   type BlackScholesResult,
 } from "./derivatives";
 
-export const RATES_CREDIT_ENGINE_VERSION = "rates-credit@1";
+export const RATES_CREDIT_ENGINE_VERSION = "rates-credit@2";
 
 export const VASICEK_REQUEST_CONTRACT = "rates-credit/vasicek-request@1";
 export const VASICEK_RESULT_CONTRACT = "rates-credit/vasicek-result@1";
@@ -132,8 +138,8 @@ export interface VasicekResult {
   readonly simulationMethod: "exact-gaussian-transition";
   readonly parameters: VasicekParameters;
   readonly execution: ShortRateExecution;
-  readonly timesYears: readonly number[];
-  readonly ratePaths: readonly (readonly number[])[];
+  readonly timesYears: TimeSeries;
+  readonly ratePaths: readonly RateSeries[];
   readonly rateFan: readonly ShortRateFanPoint[];
   readonly negativeRateObservationFraction: number;
   readonly zeroCouponBonds: readonly ZeroCouponBondAnalytics[];
@@ -237,7 +243,7 @@ function simulateVasicekPaths(
   parameters: VasicekParameters,
   execution: ShortRateExecution,
   random: SemanticRandom,
-): number[][] {
+): RateSeries[] {
   return Array.from({ length: execution.pathCount }, (_, pathIndex) => {
     const path = [parameters.initialAnnualShortRate];
     for (let stepIndex = 0; stepIndex < execution.stepCount; stepIndex += 1) {
@@ -253,7 +259,7 @@ function simulateVasicekPaths(
       assertFiniteResult(nextRate, "Vasicek transition");
       path.push(nextRate);
     }
-    return path;
+    return asRateSeries(path);
   });
 }
 
@@ -299,8 +305,8 @@ export interface CirResult {
   readonly simulationMethod: "noncentral-chi-square-transition";
   readonly parameters: CirParameters;
   readonly execution: ShortRateExecution;
-  readonly timesYears: readonly number[];
-  readonly ratePaths: readonly (readonly number[])[];
+  readonly timesYears: TimeSeries;
+  readonly ratePaths: readonly RateSeries[];
   readonly rateFan: readonly ShortRateFanPoint[];
   readonly fellerConditionSatisfied: boolean;
   readonly fellerLeftSide: number;
@@ -544,7 +550,7 @@ function simulateCirPaths(
   parameters: CirParameters,
   execution: ShortRateExecution,
   random: SemanticRandom,
-): number[][] {
+): RateSeries[] {
   return Array.from({ length: execution.pathCount }, (_, pathIndex) => {
     const path = [parameters.initialAnnualShortRate];
     for (let stepIndex = 0; stepIndex < execution.stepCount; stepIndex += 1) {
@@ -558,7 +564,7 @@ function simulateCirPaths(
         ),
       );
     }
-    return path;
+    return asRateSeries(path);
   });
 }
 
@@ -614,72 +620,15 @@ function sampleNoncentralChiSquare(
     return shiftedNormal ** 2 + centralRemainder;
   }
 
-  const poissonCount = sampleExactPoisson(
+  const poissonCount = random.poisson(
     noncentrality / 2,
-    random,
-    address,
+    ...address,
+    "noncentral-chi-square/poisson",
   );
   const gammaShape = degreesOfFreedom / 2 + poissonCount;
   return gammaShape === 0
     ? 0
     : random.gamma(gammaShape, 2, ...address, "poisson-gamma");
-}
-
-function sampleExactPoisson(
-  intensity: number,
-  random: SemanticRandom,
-  address: readonly (string | number)[],
-): number {
-  if (intensity === 0) return 0;
-  if (intensity < 30) {
-    const threshold = Math.exp(-intensity);
-    let product = 1;
-    for (let count = 0; count < 10_000; count += 1) {
-      product *= random.uniform(...address, "poisson-small", count);
-      if (product <= threshold) return count;
-    }
-  } else {
-    const squareRoot = Math.sqrt(intensity);
-    const b = 0.931 + 2.53 * squareRoot;
-    const a = -0.059 + 0.02483 * b;
-    const inverseAlpha = 1.1239 + 1.1328 / (b - 3.4);
-    const squeeze = 0.9277 - 3.6224 / (b - 2);
-    for (let attempt = 0; attempt < 10_000; attempt += 1) {
-      const centeredUniform =
-        random.uniform(...address, "poisson-large-u", attempt) - 0.5;
-      const secondUniform = random.uniform(
-        ...address,
-        "poisson-large-v",
-        attempt,
-      );
-      const distance = 0.5 - Math.abs(centeredUniform);
-      const candidate = Math.floor(
-        ((2 * a) / distance + b) * centeredUniform + intensity + 0.43,
-      );
-      if (
-        candidate >= 0 &&
-        distance >= 0.07 &&
-        secondUniform <= squeeze
-      ) {
-        return candidate;
-      }
-      if (candidate < 0 || (distance < 0.013 && secondUniform > distance)) {
-        continue;
-      }
-      const logAcceptance = Math.log(
-        (secondUniform * inverseAlpha) / (a / distance ** 2 + b),
-      );
-      const logProbability =
-        -intensity +
-        candidate * Math.log(intensity) -
-        logGamma(candidate + 1);
-      if (logAcceptance <= logProbability) return candidate;
-    }
-  }
-  throw new QuantError(
-    "NUMERICAL_FAILURE",
-    "The exact Poisson sampler did not converge.",
-  );
 }
 
 function cirConditionalMomentsUnchecked(
@@ -737,7 +686,7 @@ export interface NelsonSiegelFitResult {
   readonly parameters: NelsonSiegelParameters;
   readonly observedCurve: readonly NelsonSiegelCurvePoint[];
   readonly fittedCurve: readonly NelsonSiegelCurvePoint[];
-  readonly residualAnnualYields: readonly number[];
+  readonly residualAnnualYields: YieldSeries;
   readonly rmseAnnualYield: number;
   readonly fittingMethod:
     | "linear-least-squares-fixed-decay"
@@ -985,7 +934,7 @@ export function fitNelsonSiegelCurve(
         maturityYears,
         annualContinuouslyCompoundedYield: candidate.fitted[index],
       })),
-      residualAnnualYields: candidate.residuals,
+      residualAnnualYields: asYieldSeries(candidate.residuals),
       rmseAnnualYield,
       fittingMethod,
       decaySearchBoundsYears: bounds,
@@ -2186,11 +2135,11 @@ function assertAtMost(value: number, maximum: number, path: string): void {
   }
 }
 
-function buildTimes(execution: ShortRateExecution): number[] {
-  return Array.from(
+function buildTimes(execution: ShortRateExecution): TimeSeries {
+  return asTimeSeries(Array.from(
     { length: execution.stepCount + 1 },
     (_, index) => index * execution.stepYears,
-  );
+  ));
 }
 
 function buildRateFan(
@@ -2321,30 +2270,4 @@ function envelope<Result>(
       resultContract,
     },
   };
-}
-
-/** Lanczos approximation used only by the exact Poisson acceptance test. */
-function logGamma(value: number): number {
-  const coefficients = [
-    676.5203681218851,
-    -1259.1392167224028,
-    771.3234287776531,
-    -176.6150291621406,
-    12.507343278686905,
-    -0.13857109526572012,
-    9.984369578019572e-6,
-    1.5056327351493116e-7,
-  ];
-  const shifted = value - 1;
-  let series = 0.9999999999998099;
-  for (let index = 0; index < coefficients.length; index += 1) {
-    series += coefficients[index] / (shifted + index + 1);
-  }
-  const base = shifted + coefficients.length - 0.5;
-  return (
-    0.5 * Math.log(2 * Math.PI) +
-    (shifted + 0.5) * Math.log(base) -
-    base +
-    Math.log(series)
-  );
 }

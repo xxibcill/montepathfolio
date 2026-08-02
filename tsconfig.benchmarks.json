@@ -1,0 +1,8 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "composite": false,
+    "types": ["vite/client"]
+  },
+  "include": ["benchmarks/**/*.ts", "src/**/*.ts", "src/**/*.tsx", "vite.config.ts"]
+}

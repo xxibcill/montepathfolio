@@ -22,6 +22,14 @@ export type WealthSeries = SemanticSeries<"wealth">;
 export type DrawdownSeries = SemanticSeries<"drawdown-probability">;
 export type IndexSeries = SemanticSeries<"index">;
 export type LossValueSeries = SemanticSeries<"positive-loss">;
+export type PriceSeries = SemanticSeries<"price">;
+export type RateSeries = SemanticSeries<"annual-rate">;
+export type YieldSeries = SemanticSeries<"annual-yield">;
+export type ProbabilitySeries = SemanticSeries<"probability">;
+export type TimeSeries = SemanticSeries<"time-years">;
+export type QuantitySeries = SemanticSeries<"quantity">;
+export type SpreadSeries = SemanticSeries<"spread">;
+export type VolatilitySeries = SemanticSeries<"volatility">;
 
 export function asReturnSeries(values: readonly number[]): ReturnSeries {
   return values as ReturnSeries;
@@ -45,6 +53,38 @@ export function asIndexSeries(values: readonly number[]): IndexSeries {
 
 export function asLossValueSeries(values: readonly number[]): LossValueSeries {
   return values as LossValueSeries;
+}
+
+export function asPriceSeries(values: readonly number[]): PriceSeries {
+  return values as PriceSeries;
+}
+
+export function asRateSeries(values: readonly number[]): RateSeries {
+  return values as RateSeries;
+}
+
+export function asYieldSeries(values: readonly number[]): YieldSeries {
+  return values as YieldSeries;
+}
+
+export function asProbabilitySeries(values: readonly number[]): ProbabilitySeries {
+  return values as ProbabilitySeries;
+}
+
+export function asTimeSeries(values: readonly number[]): TimeSeries {
+  return values as TimeSeries;
+}
+
+export function asQuantitySeries(values: readonly number[]): QuantitySeries {
+  return values as QuantitySeries;
+}
+
+export function asSpreadSeries(values: readonly number[]): SpreadSeries {
+  return values as SpreadSeries;
+}
+
+export function asVolatilitySeries(values: readonly number[]): VolatilitySeries {
+  return values as VolatilitySeries;
 }
 
 export type QuantIssueCode =

@@ -3,7 +3,6 @@ import { QuantError, correlation, createSemanticRandom, mean } from "./core";
 import {
   fitGarch,
   fitOrderedRegimes,
-  parseReturnDatasetCsv,
   runCompositeMarket,
   runCopula,
   runGarch,
@@ -35,21 +34,6 @@ const dataset: ReturnDataset = {
 };
 
 describe("return datasets and calibration snapshots", () => {
-  it("parses and validates a compact CSV dataset", () => {
-    const parsed = parseReturnDatasetCsv(
-      "date,A,B\n2025-01-01,0.01,-0.01\n2025-02-01,0.02,0.00",
-      {
-        frequency: "monthly",
-        returnConvention: "simple",
-        missingValuePolicy: "reject",
-        alignmentPolicy: "intersection",
-        provenance: { label: "User lesson", kind: "user-imported" },
-      },
-    );
-    expect(parsed.assetIds).toEqual(["A", "B"]);
-    expect(parsed.rows[1]).toEqual([0.02, 0]);
-  });
-
   it("accepts a total-loss simple return and rejects values below -100%", () => {
     const totalLossDataset: ReturnDataset = {
       ...dataset,
@@ -147,6 +131,71 @@ describe("Merton jump diffusion", () => {
     expect(jumped.diagnostics.jumpConditionedMeanMaximumDrawdown[0]).not.toBeNull();
     expect(jumped.diagnostics.meanMaximumDrawdown[0]).toBeGreaterThanOrEqual(0);
   });
+
+  it("enforces the documented asset-step and sampled-output limits", () => {
+    expect(() =>
+      runMertonJumpDiffusion({
+        ...input,
+        initialPrices: [100, 100],
+        assets: [input.assets[0], input.assets[0]],
+        correlation: [[1, 0], [0, 1]],
+        jumps: [input.jumps[0], input.jumps[0]],
+        execution: {
+          ...input.execution,
+          paths: 251,
+          steps: 10_000,
+          samplePaths: 1,
+        },
+      }),
+    ).toThrow(/asset-step/);
+    expect(() =>
+      runMertonJumpDiffusion({
+        ...input,
+        execution: { ...input.execution, samplePaths: -1 },
+      }),
+    ).toThrow(/samplePaths/);
+  });
+
+  it("preflights stochastic jump-event work before sampling", () => {
+    expect(() =>
+      runMertonJumpDiffusion({
+        ...input,
+        jumps: [{
+          ...input.jumps[0],
+          annualIntensity: 1_000_000_000,
+        }],
+        execution: {
+          ...input.execution,
+          paths: 1,
+          steps: 1,
+          stepYears: 1,
+          samplePaths: 1,
+        },
+      }),
+    ).toThrow(/event resource limit/);
+  });
+
+  it("rejects finite jump parameters that overflow compensation", () => {
+    expect(() =>
+      runMertonJumpDiffusion({
+        ...input,
+        jumps: [
+          {
+            annualIntensity: 1e-10,
+            meanLogJump: 1_000,
+            logJumpVolatility: 0,
+          },
+        ],
+        execution: {
+          ...input.execution,
+          paths: 1,
+          steps: 1,
+          stepYears: 1,
+          samplePaths: 1,
+        },
+      }),
+    ).toThrow(/jump compensation overflowed/i);
+  });
 });
 
 describe("GARCH(1,1)", () => {
@@ -179,6 +228,41 @@ describe("GARCH(1,1)", () => {
   it("standardizes finite-variance Student-t innovations", () => {
     expect(standardizeStudentT(2, 6)).toBeCloseTo(2 * Math.sqrt(4 / 6));
     expect(() => standardizeStudentT(1, 2)).toThrow(/exceed two/);
+  });
+
+  it("rejects persistence overflow and finite inputs that overflow recurrence", () => {
+    expect(() =>
+      runGarch({
+        ...input,
+        parameters: {
+          ...input.parameters,
+          alpha: Number.MAX_VALUE,
+          beta: Number.MAX_VALUE,
+        },
+      }),
+    ).toThrow(/alpha \+ beta must remain finite/);
+    expect(() =>
+      runGarch({
+        ...input,
+        parameters: {
+          omega: 1,
+          alpha: Number.MAX_VALUE,
+          beta: 0,
+          meanReturn: 0,
+        },
+        initialVariance: Number.MAX_VALUE,
+        execution: { ...input.execution, paths: 1, steps: 1, samplePaths: 1 },
+      }),
+    ).toThrow(/volatility forecast overflowed/);
+  });
+
+  it("preflights retained sample output separately from simulation work", () => {
+    expect(() =>
+      runGarch({
+        ...input,
+        execution: { seed: 1, paths: 1_000, steps: 3_000, samplePaths: 1_000 },
+      }),
+    ).toThrow(/retention limit/);
   });
 });
 
@@ -253,6 +337,31 @@ describe("historical bootstrap and copulas", () => {
     for (const row of result.sampledRows[0]) {
       expect(dataset.rows.some((source) => source[0] === row[0])).toBe(true);
     }
+  });
+
+  it("counts source indexes in the bootstrap retention limit", () => {
+    const assetCount = 100_000;
+    const wideDataset: ReturnDataset = {
+      ...dataset,
+      assetIds: Array.from(
+        { length: assetCount },
+        (_, index) => `asset-${index}`,
+      ),
+      timestamps: dataset.timestamps.slice(0, 2),
+      rows: [Array(assetCount).fill(0.01), Array(assetCount).fill(-0.01)],
+    };
+
+    expect(() =>
+      runHistoricalBootstrap({
+        contract: "market-model/historical-bootstrap@1",
+        dataset: wideDataset,
+        method: { kind: "iid" },
+        seed: 4,
+        paths: 1,
+        steps: 50,
+        samplePaths: 1,
+      }),
+    ).toThrow(/retention limit/);
   });
 
   it("recovers Gaussian dependence and shows stronger t-copula lower tails", () => {
@@ -426,5 +535,97 @@ describe("sanctioned HMM → GARCH → copula → jump pipeline", () => {
       ),
     );
     expect(Math.abs(correlation(magnitudes[0], magnitudes[1]))).toBeLessThan(0.08);
+  });
+
+  it("validates composite discriminants, booleans, and finite GARCH means", () => {
+    expect(() =>
+      runCompositeMarket({
+        ...input,
+        copula: { ...input.copula, kind: "unknown" as never },
+      }),
+    ).toThrow(/Unsupported copula kind/);
+    expect(() =>
+      runCompositeMarket({
+        ...input,
+        enabled: { ...input.enabled, regimes: "false" as never },
+      }),
+    ).toThrow(/must be a boolean/);
+    expect(() =>
+      runCompositeMarket({
+        ...input,
+        garch: [
+          { ...input.garch[0], meanReturn: Number.NaN },
+          input.garch[1],
+        ],
+      }),
+    ).toThrow(/meanReturn must be finite/);
+  });
+
+  it("rejects composite work scaled by asset count before simulation", () => {
+    const assets = 128;
+    const correlation = Array.from({ length: assets }, (_, row) =>
+      Array.from({ length: assets }, (_, column) => Number(row === column)),
+    );
+    expect(() =>
+      runCompositeMarket({
+        ...input,
+        initialPrices: Array(assets).fill(100),
+        regimes: {
+          initialProbabilities: [1],
+          transitionMatrix: [[1]],
+          annualDrifts: [Array(assets).fill(0.05)],
+        },
+        garch: Array(assets).fill(input.garch[0]),
+        copula: { kind: "gaussian", correlation },
+        jumps: Array(assets).fill(input.jumps[0]),
+        execution: {
+          seed: 1,
+          paths: 500,
+          steps: 10_000,
+          stepYears: 1 / 252,
+          samplePaths: 1,
+        },
+      }),
+    ).toThrow(/asset-step/);
+  });
+
+  it("preflights composite jump-event work before sampling", () => {
+    expect(() =>
+      runCompositeMarket({
+        ...input,
+        jumps: input.jumps.map((jump) => ({
+          ...jump,
+          annualIntensity: 1_000_000_000,
+        })),
+        execution: {
+          ...input.execution,
+          paths: 1,
+          steps: 1,
+          stepYears: 1,
+          samplePaths: 1,
+        },
+      }),
+    ).toThrow(/event resource limit/);
+  });
+
+  it("rejects composite jump parameters that overflow compensation", () => {
+    expect(() =>
+      runCompositeMarket({
+        ...input,
+        jumps: input.jumps.map((jump) => ({
+          ...jump,
+          annualIntensity: 1e-10,
+          meanLogJump: 1_000,
+          logJumpVolatility: 0,
+        })),
+        execution: {
+          ...input.execution,
+          paths: 1,
+          steps: 1,
+          stepYears: 1,
+          samplePaths: 1,
+        },
+      }),
+    ).toThrow(/jump compensation overflowed/i);
   });
 });

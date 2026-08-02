@@ -3,6 +3,7 @@ import { LESSON_DATA_ATTACHMENT_CONTRACT } from "./lesson-worker-protocol";
 import {
   parseImportedFactorDataset,
   parseImportedReturnDataset,
+  parseReturnDatasetCsv,
 } from "./imported-datasets";
 
 const attachment = {
@@ -13,6 +14,30 @@ const attachment = {
 };
 
 describe("learner CSV adapters", () => {
+  it("parses a rectangular return CSV at the lab boundary", () => {
+    const parsed = parseReturnDatasetCsv(
+      "date,A,B\n2025-01-01,0.01,-0.01\n2025-02-01,0.02,0.00",
+      {
+        frequency: "monthly",
+        returnConvention: "simple",
+        missingValuePolicy: "reject",
+        alignmentPolicy: "intersection",
+        provenance: { label: "User lesson", kind: "user-imported" },
+      },
+    );
+    expect(parsed.assetIds).toEqual(["A", "B"]);
+    expect(parsed.rows[1]).toEqual([0.02, 0]);
+  });
+
+  it("rejects ragged CSV rows before constructing a quant dataset", () => {
+    expect(() =>
+      parseImportedReturnDataset({
+        ...attachment,
+        text: "date,A,B\n2026-01-01,0.01\n2026-02-01,0.02,0.03",
+      }),
+    ).toThrow(/same number of columns/);
+  });
+
   it("labels a simple return matrix as user imported", () => {
     const dataset = parseImportedReturnDataset(attachment);
     expect(dataset.rows).toEqual([[0.01], [-0.02]]);

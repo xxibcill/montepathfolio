@@ -103,7 +103,8 @@ Implementation: [`portfolio-lab request@1`](../../src/lib/portfolio-lab/contract
   annual counts recover $\lambda$ within a fixed tolerance; separate jump draws
   do not shift diffusion; compensated mean growth, terminal tail metrics, and
   drawdowns remain finite and ordered; no-jump runs report a null conditional
-  drawdown; matrix and five-million asset-step resource limits are enforced.
+  drawdown; matrix, asset-step plus expected-event work, per-step event count,
+  and five-million-value output-retention limits are enforced.
 - **Worked intuition.** If $m_J=\log(0.9)$ and $s_J=0$, one arrival multiplies
   price by 0.9. With $\lambda=0.5$, compensation adds about
   $-\lambda(0.9-1)=+0.05$ to pre-jump annual log drift so the lower jump outcomes
@@ -176,8 +177,9 @@ Implementation: [`portfolio-lab request@1`](../../src/lib/portfolio-lab/contract
   rejects missing cells before IID or moving-block sampling.
 - **Validation gate.** Every emitted row equals a source row; moving-block
   indexes remain consecutive modulo the sample; block size fits the dataset;
-  paths/steps are each bounded at 10,000; provenance and replacement policy are
-  explicit.
+  paths/steps are each bounded at 10,000; sampled rows and their source indexes
+  share one five-million-value retention budget; provenance and replacement
+  policy are explicit.
 - **Worked intuition.** For source indexes `[0,1,2,3]`, block size 3, and sampled
   start 3, the first block is `[3,0,1]`: wraparound preserves adjacency rather
   than choosing three unrelated rows.

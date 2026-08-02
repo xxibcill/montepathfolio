@@ -27,5 +27,16 @@ export default tseslint.config(
         { allowConstantExport: true }
       ]
     },
-  }
+  },
+  {
+    extends: [js.configs.recommended],
+    files: ["**/*.mjs"],
+    languageOptions: {
+      ecmaVersion: 2022,
+      globals: {
+        ...globals.node,
+        WebSocket: "readonly",
+      },
+    },
+  },
 );

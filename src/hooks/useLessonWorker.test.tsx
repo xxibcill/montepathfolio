@@ -63,7 +63,7 @@ function success(requestId: number, label: string): LessonWorkerResponse {
 }
 
 function HookHarness({ capture }: { readonly capture: (state: LessonState) => void }) {
-  capture(useLessonWorker("fixture-lesson", { parameter: 1 }));
+  capture(useLessonWorker("jump-diffusion", { parameter: 1 }));
   return null;
 }
 

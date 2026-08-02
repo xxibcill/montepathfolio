@@ -1,7 +1,9 @@
 import { lazy, Suspense, useEffect, useState } from "react";
+import { AppErrorBoundary } from "./components/AppErrorBoundary";
 import { LoadingChart } from "./components/LoadingChart";
 import { LabIndex } from "./labs/LabIndex";
-import { parseLabRoute, type LabRoute } from "./labs/routes";
+import { getLab, getLesson, isKnownLesson } from "./labs/catalog";
+import { labHref, parseLabRoute, type LabRoute } from "./labs/routes";
 
 const PortfolioProjectionLab = lazy(
   () => import("./labs/PortfolioProjectionLab"),
@@ -9,7 +11,26 @@ const PortfolioProjectionLab = lazy(
 const QuantLabWorkspace = lazy(() => import("./labs/QuantLabWorkspace"));
 
 function currentRoute(): LabRoute {
-  return parseLabRoute(window.location.hash);
+  const route = parseLabRoute(window.location.hash);
+  if (route.kind === "lab") {
+    const canonical = isKnownLesson(route.lab, route.lesson)
+      ? labHref(route.lab, route.lesson)
+      : labHref(route.lab);
+    if (window.location.hash === canonical) return route;
+    window.history.replaceState(null, "", canonical);
+    return parseLabRoute(canonical);
+  }
+  return route;
+}
+
+function routeTitle(route: LabRoute): string {
+  if (route.kind === "home") return "Montepathfolio — Quantitative Learning Atlas";
+  const lab = getLab(route.lab);
+  const lessonTitle =
+    route.lesson === "accumulation"
+      ? "Accumulation simulator"
+      : getLesson(route.lab, route.lesson).title;
+  return `${lessonTitle} — ${lab.title} | Montepathfolio`;
 }
 
 function App() {
@@ -21,26 +42,36 @@ function App() {
     return () => window.removeEventListener("hashchange", handleHashChange);
   }, []);
 
-  if (route.kind === "home") return <LabIndex />;
+  useEffect(() => {
+    document.title = routeTitle(route);
+  }, [route]);
+
+  const routeKey = route.kind === "home" ? "home" : `${route.lab}/${route.lesson}`;
+
+  if (route.kind === "home") {
+    return <AppErrorBoundary key={routeKey}><LabIndex /></AppErrorBoundary>;
+  }
 
   return (
-    <Suspense
-      fallback={
-        <div className="app-shell lab-loading" role="status">
-          <LoadingChart />
-        </div>
-      }
-    >
-      {route.lab === "portfolio-projection" && route.lesson === "accumulation" ? (
-        <PortfolioProjectionLab />
-      ) : (
-        <QuantLabWorkspace
-          key={`${route.lab}/${route.lesson}`}
-          lab={route.lab}
-          initialLessonId={route.lesson}
-        />
-      )}
-    </Suspense>
+    <AppErrorBoundary key={routeKey}>
+      <Suspense
+        fallback={
+          <div className="app-shell lab-loading" role="status">
+            <LoadingChart label="Opening laboratory…" />
+          </div>
+        }
+      >
+        {route.lab === "portfolio-projection" && route.lesson === "accumulation" ? (
+          <PortfolioProjectionLab />
+        ) : (
+          <QuantLabWorkspace
+            key={routeKey}
+            lab={route.lab}
+            initialLessonId={route.lesson}
+          />
+        )}
+      </Suspense>
+    </AppErrorBoundary>
   );
 }
 

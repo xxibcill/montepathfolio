@@ -1,6 +1,6 @@
 # Quantitative Simulation Laboratory Roadmap
 
-Status: educational implementation complete — all seven release families have learner-facing model verticals; intentionally deferred production extensions remain out of scope
+Status: learner-facing vertical coverage complete through Release 7; Release 7's multi-asset venue-coupling exit gate remains intentionally partial
 
 Last updated: 2026-07-31
 
@@ -784,12 +784,13 @@ Each release runs:
 
 ```bash
 npm run lint
+npm run typecheck:benchmarks
 npm test
 npm run build
+npm run test:routes
 ```
 
-Add browser performance checks once model execution, transfer size, or rendering
-becomes a measured bottleneck. Consider WebAssembly, worker pools, or GPU
+Maintain browser performance checks around measured worker boundaries. Consider WebAssembly, worker pools, or GPU
 execution only after profiling demonstrates that pure TypeScript and typed arrays
 cannot meet an explicit budget.
 
@@ -910,7 +911,7 @@ visual, imported-data workflow, or production calibration is complete.
 | --- | --- | --- |
 | Six lazy laboratories and 31 chapters | [`catalog.ts`](../src/labs/catalog.ts), [`routes.ts`](../src/labs/routes.ts), and [`App.tsx`](../src/App.tsx) | Implemented. Portfolio projection has nine chapters including the preserved accumulation simulator; Risk has two; Construction six; Derivatives five; Rates & Credit five; and Trading four. |
 | Shared numerical foundation | [`core.ts`](../src/lib/quant/core.ts) and [`core.test.ts`](../src/lib/quant/core.test.ts) | Implemented for the current consumers: validation, moments and R-7 quantiles, matrix operations/factorization, distributions, root finding, optimization helpers, and versioned semantic random streams. It is not a general-purpose scientific-computing library. |
-| Advanced chapter worker | [`lesson-worker-protocol.ts`](../src/labs/lesson-worker-protocol.ts), [`lesson.worker.ts`](../src/workers/lesson.worker.ts), and [`useLessonWorker.ts`](../src/hooks/useLessonWorker.ts) | Implemented with structured failures, cancellation by worker termination, stale-response suppression, and bounded lesson results. |
+| Advanced chapter workers | [`lesson-worker-protocol.ts`](../src/labs/lesson-worker-protocol.ts), the laboratory-family workers in [`src/workers`](../src/workers), and [`useLessonWorker.ts`](../src/hooks/useLessonWorker.ts) | Implemented with family-specific bundles, structured failures, cancellation by worker termination, stale-response suppression, and bounded lesson results. |
 | Bounded local CSV import | [`DatasetImport.tsx`](../src/components/DatasetImport.tsx), [`imported-datasets.ts`](../src/labs/imported-datasets.ts), [`imported-datasets.test.ts`](../src/labs/imported-datasets.test.ts), and [`lesson-worker-protocol.test.ts`](../src/labs/lesson-worker-protocol.test.ts) | Implemented for GARCH calibration, historical bootstrap, ordered-regime fitting, VaR backtesting, and factor analysis. Files are capped at 2 MB, parsed in the worker, labeled `user-imported`, and represented in saved scenarios by filename/contract reference rather than raw contents. |
 | Learner documentation | [Model notes](models/README.md) and [references](models/references.md) | Implemented for all six laboratories. Notes state equations, units, implementation choices, gates, intuition, assumptions, limitations, and educational disclaimers. |
 | Scenario persistence and export | [`QuantLabWorkspace.tsx`](../src/labs/QuantLabWorkspace.tsx) | Implemented per laboratory for normalized inputs and compact summaries. Large raw path matrices are not persisted by default. |
@@ -937,11 +938,15 @@ remain:
 
 ```bash
 npm run lint
+npm run typecheck:benchmarks
 npm test
 npm run build
+npm run test:routes
 ```
 
-`npm run check` runs all three. `npm run benchmark:portfolio` records the native
+`npm run check` runs lint, both type-check targets, tests, and the production
+build. The separate browser smoke command validates every chapter plus focus,
+contrast, and touch-target contracts. `npm run benchmark:portfolio` records the native
 GBM/HMM production worker boundary; `npm run benchmark:release1` records the
 jump, GARCH, and mean–variance lesson-worker workloads and their interaction
 budgets. A model or chapter should be described as complete only after the

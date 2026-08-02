@@ -21,6 +21,9 @@ import {
   assertIntegerInRange,
   assertNonNegative,
   assertPositive,
+  asPriceSeries,
+  asTimeSeries,
+  asVarianceSeries,
   cholesky,
   createSemanticRandom,
   mean,
@@ -30,6 +33,9 @@ import {
   sampleVariance,
   type ModelEnvelope,
   type ModelWarning,
+  type PriceSeries,
+  type TimeSeries,
+  type VarianceSeries,
 } from "./core";
 
 export const DERIVATIVES_ENGINE_VERSION = "derivatives-lab@1";
@@ -376,7 +382,7 @@ export interface PayoffDiagramPoint {
 export interface PayoffDiagramResult {
   readonly contract: typeof PAYOFF_DIAGRAM_RESULT_CONTRACT;
   readonly points: readonly PayoffDiagramPoint[];
-  readonly breakEvenSpots: readonly number[];
+  readonly breakEvenSpots: PriceSeries;
   readonly lesson: LearningNote;
 }
 
@@ -417,7 +423,7 @@ export function buildPayoffDiagram(
   const result: PayoffDiagramResult = {
     contract: PAYOFF_DIAGRAM_RESULT_CONTRACT,
     points,
-    breakEvenSpots,
+    breakEvenSpots: asPriceSeries(breakEvenSpots),
     lesson: {
       title: "Payoff and profit/loss are different",
       summary:
@@ -955,9 +961,9 @@ export interface MonteCarloEstimate {
 export interface MonteCarloSamplePath {
   readonly trajectoryIndex: number;
   readonly antitheticSign: 1 | -1;
-  readonly times: readonly number[];
+  readonly times: TimeSeries;
   /** One price series per asset; a single-asset option therefore has one row. */
-  readonly pricesByAsset: readonly (readonly number[])[];
+  readonly pricesByAsset: readonly PriceSeries[];
   readonly payoff: number;
 }
 
@@ -1134,11 +1140,11 @@ export function priceMonteCarloOption(
           samplePaths.push({
             trajectoryIndex,
             antitheticSign: sign,
-            times: timeGrid(
+            times: asTimeSeries(timeGrid(
               request.timeToMaturityYears,
               request.execution.steps,
-            ),
-            pricesByAsset: simulated.paths,
+            )),
+            pricesByAsset: simulated.paths.map(asPriceSeries),
             payoff,
           });
         }
@@ -1151,11 +1157,11 @@ export function priceMonteCarloOption(
           samplePaths.push({
             trajectoryIndex,
             antitheticSign: sign,
-            times: timeGrid(
+            times: asTimeSeries(timeGrid(
               request.timeToMaturityYears,
               request.execution.steps,
-            ),
-            pricesByAsset: [path],
+            )),
+            pricesByAsset: [asPriceSeries(path)],
             payoff,
           });
         }
@@ -1517,9 +1523,9 @@ export interface HestonRequest {
 export interface HestonSamplePath {
   readonly trajectoryIndex: number;
   readonly antitheticSign: 1 | -1;
-  readonly times: readonly number[];
-  readonly spots: readonly number[];
-  readonly variances: readonly number[];
+  readonly times: TimeSeries;
+  readonly spots: PriceSeries;
+  readonly variances: VarianceSeries;
 }
 
 export interface HestonResult {
@@ -1641,12 +1647,12 @@ export function priceHestonMonteCarlo(
         samplePaths.push({
           trajectoryIndex,
           antitheticSign: sign,
-          times: timeGrid(
+          times: asTimeSeries(timeGrid(
             request.timeToMaturityYears,
             request.execution.steps,
-          ),
-          spots: spotPath,
-          variances: variancePath,
+          )),
+          spots: asPriceSeries(spotPath),
+          variances: asVarianceSeries(variancePath),
         });
       }
     }

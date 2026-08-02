@@ -72,7 +72,7 @@ export function saveLessonScenario(
   values: Readonly<Record<string, number>>,
   output: LessonOutput,
   attachment?: LessonDataAttachment,
-): void {
+): boolean {
   try {
     window.localStorage.setItem(
       scenarioKey(lab),
@@ -80,8 +80,10 @@ export function saveLessonScenario(
         portableLessonScenario(lab, lesson, values, output, attachment),
       ),
     );
+    return true;
   } catch {
     // Persistence is optional; the running experiment remains usable.
+    return false;
   }
 }
 

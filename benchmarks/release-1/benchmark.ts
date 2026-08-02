@@ -4,6 +4,7 @@ import {
   type LessonWorkerRequest,
   type LessonWorkerResponse,
 } from "../../src/labs/lesson-worker-protocol";
+import { createLessonWorker } from "../../src/workers/lesson-worker-factory";
 
 const WARMUP_RUNS = 1;
 const MEASURED_RUNS = 3;
@@ -148,10 +149,7 @@ function runScenario(
   requestId: number,
 ): Promise<Extract<LessonWorkerResponse, { ok: true }>> {
   return new Promise((resolve, reject) => {
-    const worker = new Worker(
-      new URL("../../src/workers/lesson.worker.ts", import.meta.url),
-      { type: "module" },
-    );
+    const worker = createLessonWorker(scenario.lessonId);
     const request: LessonWorkerRequest = {
       contract: LESSON_WORKER_PROTOCOL,
       requestId,

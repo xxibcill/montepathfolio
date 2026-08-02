@@ -527,7 +527,7 @@ const constructionLessons: readonly LessonDefinition[] = [
     intuition: "Kelly rewards excess return and penalizes covariance. Fractional Kelly deliberately gives up theoretical growth to reduce leverage and drawdown sensitivity.",
     equation: "f* ≈ Σ⁻¹(μ−r_f1);  f = qf*, 0<q≤1",
     symbols: [{ symbol: "f*", meaning: "continuous-return Kelly allocation" }, { symbol: "q", meaning: "fractional Kelly multiplier" }],
-    parameters: [percent("edgeA", "Asset A excess return", "Annual return above the risk-free rate.", 0.06, -0.1, 0.3), percent("edgeB", "Asset B excess return", "Annual return above the risk-free rate.", 0.025, -0.1, 0.3), number("fraction", "Kelly fraction", "Scale applied to the full-Kelly solution.", 0.5, 0.1, 1, 0.05, "fraction"), number("leverageCap", "Leverage cap", "Maximum total risky allocation.", 1, 0.25, 2, 0.05, "gross weight")],
+    parameters: [percent("edgeA", "Asset A excess return", "Annual return above the risk-free rate.", 0.06, -0.1, 0.3), percent("edgeB", "Asset B excess return", "Annual return above the risk-free rate.", 0.025, -0.1, 0.3, 0.005), number("fraction", "Kelly fraction", "Scale applied to the full-Kelly solution.", 0.5, 0.1, 1, 0.05, "fraction"), number("leverageCap", "Leverage cap", "Maximum total risky allocation.", 1, 0.25, 2, 0.05, "gross weight")],
     presets: [illustrativePreset({ edgeA: 0.06, edgeB: 0.025, fraction: 0.5, leverageCap: 1 })],
     workedExample: "For a binary bet paying net odds b, exact Kelly is (bp−q)/b. A fair coin at even odds gives zero.",
     check: "Full, half, and quarter allocations respect leverage and per-asset caps; the binary fixture matches the exact formula.",
@@ -620,7 +620,7 @@ const derivativesLessons: readonly LessonDefinition[] = [
     intuition: "Heston evolves price and variance together. Full truncation uses max(v,0) inside the Euler update so sampled variance stays nonnegative.",
     equation: "dv=κ(θ−v)dt+ξ√v dWᵥ;  corr(dWₛ,dWᵥ)=ρ",
     symbols: [{ symbol: "κ,θ", meaning: "variance mean-reversion speed and level" }, { symbol: "ξ", meaning: "volatility of variance" }, { symbol: "ρ", meaning: "price/variance shock correlation" }],
-    parameters: [number("longRunVariance", "Long-run variance θ", "Target variance level.", 0.04, 0.001, 0.5, 0.005, "annual variance"), number("volOfVol", "Volatility of variance ξ", "Randomness in the variance process.", 0.45, 0, 2, 0.05, "annual scale"), number("correlation", "Leverage correlation ρ", "Price/variance shock correlation.", -0.65, -0.95, 0.95, 0.05, "correlation"), number("paths", "Paths", "Fixed-seed pricing sample.", 3000, 500, 20000, 500, "paths", "integer")],
+    parameters: [number("longRunVariance", "Long-run variance θ", "Target variance level.", 0.04, 0.001, 0.5, 0.001, "annual variance"), number("volOfVol", "Volatility of variance ξ", "Randomness in the variance process.", 0.45, 0, 2, 0.05, "annual scale"), number("correlation", "Leverage correlation ρ", "Price/variance shock correlation.", -0.65, -0.95, 0.95, 0.05, "correlation"), number("paths", "Paths", "Fixed-seed pricing sample.", 3000, 500, 20000, 500, "paths", "integer")],
     presets: [illustrativePreset({ longRunVariance: 0.04, volOfVol: 0.45, correlation: -0.65, paths: 3000 })],
     workedExample: "When ξ = 0 and initial variance equals θ, variance is deterministic and the price process approaches constant-volatility GBM.",
     check: "All simulated variances are nonnegative; long-run average tends toward θ and empirical shock correlation tends toward ρ.",
@@ -659,7 +659,7 @@ const ratesCreditLessons: readonly LessonDefinition[] = [
     intuition: "The exact transition combines decayed distance from the mean with a Gaussian innovation whose variance has a closed form.",
     equation: "rₜ₊Δ = θ+(rₜ−θ)e⁻κΔ + σ√[(1−e⁻²κΔ)/(2κ)]Z",
     symbols: [{ symbol: "κ", meaning: "mean-reversion speed per year" }, { symbol: "θ", meaning: "long-run annual short rate" }],
-    parameters: [percent("initialRate", "Initial short rate", "Annual continuously compounded short rate.", 0.03, 0, 0.2), percent("longRunRate", "Long-run rate", "Risk-neutral mean level shared by both models.", 0.04, 0, 0.2), number("meanReversion", "Mean reversion κ", "Speed per year shared by both models.", 0.7, 0.05, 5, 0.05, "per year"), percent("volatility", "Vasicek volatility", "Annual Gaussian short-rate volatility.", 0.015, 0, 0.1), percent("cirVolatility", "CIR volatility", "Square-root diffusion coefficient; its units differ from Vasicek σ.", 0.1, 0, 0.5), number("maturity", "Bond maturity", "Zero-coupon maturity in years.", 5, 0.25, 30, 0.25, "years")],
+    parameters: [percent("initialRate", "Initial short rate", "Annual continuously compounded short rate.", 0.03, 0, 0.2), percent("longRunRate", "Long-run rate", "Risk-neutral mean level shared by both models.", 0.04, 0, 0.2), number("meanReversion", "Mean reversion κ", "Speed per year shared by both models.", 0.7, 0.05, 5, 0.05, "per year"), percent("volatility", "Vasicek volatility", "Annual Gaussian short-rate volatility.", 0.015, 0, 0.1, 0.005), percent("cirVolatility", "CIR volatility", "Square-root diffusion coefficient; its units differ from Vasicek σ.", 0.1, 0, 0.5), number("maturity", "Bond maturity", "Zero-coupon maturity in years.", 5, 0.25, 30, 0.25, "years")],
     presets: [illustrativePreset({ initialRate: 0.03, longRunRate: 0.04, meanReversion: 0.7, volatility: 0.015, cirVolatility: 0.1, maturity: 5 })],
     workedExample: "As Δ grows, e⁻κΔ shrinks, so the conditional mean forgets today’s rate and approaches θ.",
     check: "Both models use the same execution grid and maturity; negative Vasicek observations, the CIR boundary, bond duration, and convexity stay visible.",
@@ -713,7 +713,7 @@ const ratesCreditLessons: readonly LessonDefinition[] = [
     intuition: "Cumulative hazard converts an arrival intensity into survival. Expected risky cash flows weight promised payments by survival and recovery by default probability.",
     equation: "S(T)=exp(−∫₀ᵀλ(u)du);  EL=PD×LGD×exposure",
     symbols: [{ symbol: "λ", meaning: "annual default intensity" }, { symbol: "S(T)", meaning: "survival probability" }, { symbol: "LGD", meaning: "one minus recovery fraction" }],
-    parameters: [choice("curveType", "Hazard curve", "Choose one constant intensity or an explicit breakpoint with two intensities.", 0, [{ value: 0, label: "Constant" }, { value: 1, label: "Piecewise constant" }]), number("hazard", "Initial hazard", "Annual intensity for the constant curve or first piece.", 0.025, 0, 0.5, 0.005, "per year"), number("longHazard", "Later hazard", "Annual intensity after the breakpoint in piecewise mode.", 0.06, 0, 0.5, 0.005, "per year"), number("breakYear", "Hazard breakpoint", "Year when the later piece begins.", 3, 0.5, 15, 0.5, "years"), number("recovery", "Recovery", "Fraction of face value recovered on default.", 0.4, 0, 1, 0.05, "fraction"), percent("discountRate", "Discount rate", "Annual continuous risk-free discount rate.", 0.035, -0.05, 0.2), number("maturity", "Maturity", "Bond horizon in years.", 5, 0.5, 20, 0.5, "years")],
+    parameters: [choice("curveType", "Hazard curve", "Choose one constant intensity or an explicit breakpoint with two intensities.", 0, [{ value: 0, label: "Constant" }, { value: 1, label: "Piecewise constant" }]), number("hazard", "Initial hazard", "Annual intensity for the constant curve or first piece.", 0.025, 0, 0.5, 0.005, "per year"), number("longHazard", "Later hazard", "Annual intensity after the breakpoint in piecewise mode.", 0.06, 0, 0.5, 0.005, "per year"), number("breakYear", "Hazard breakpoint", "Year when the later piece begins.", 3, 0.5, 15, 0.5, "years"), number("recovery", "Recovery", "Fraction of face value recovered on default.", 0.4, 0, 1, 0.05, "fraction"), percent("discountRate", "Discount rate", "Annual continuous risk-free discount rate.", 0.035, -0.05, 0.2, 0.005), number("maturity", "Maturity", "Bond horizon in years.", 5, 0.5, 20, 0.5, "years")],
     presets: [illustrativePreset({ curveType: 0, hazard: 0.025, longHazard: 0.06, breakYear: 3, recovery: 0.4, discountRate: 0.035, maturity: 5 }), illustrativePreset({ curveType: 1, hazard: 0.015, longHazard: 0.06, breakYear: 3, recovery: 0.4, discountRate: 0.035, maturity: 5 }, "Piecewise hazard", "Lower near-term intensity followed by a visible higher long-term segment.")],
     workedExample: "At λ=2% and T=5, survival is e⁻⁰·¹≈90.5%; the five-year default probability is about 9.5%.",
     check: "Constant-hazard survival equals e⁻λT and exact scheduled/recovery cash-flow fixtures reconcile.",
@@ -847,10 +847,15 @@ export function getLab(id: LabId): LabDefinition {
 }
 
 export function getLesson(lab: LabId, lessonId: string): LessonDefinition {
-  return (
-    LESSONS.find((lesson) => lesson.lab === lab && lesson.id === lessonId) ??
-    LESSONS.find((lesson) => lesson.lab === lab)!
+  const lesson = LESSONS.find(
+    (candidate) => candidate.lab === lab && candidate.id === lessonId,
   );
+  if (!lesson) throw new Error(`Unknown lesson route: ${lab}/${lessonId}`);
+  return lesson;
+}
+
+export function isKnownLesson(lab: LabId, lessonId: string): boolean {
+  return LESSON_IDS_BY_LAB[lab].includes(lessonId);
 }
 
 export function lessonsForLab(lab: LabId): readonly LessonDefinition[] {

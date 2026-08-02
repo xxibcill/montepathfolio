@@ -18,13 +18,13 @@ import type { PortfolioProjectionResult } from "../labs/portfolio-projection-mod
 
 type ValueMode = "nominal" | "real";
 
-const REPRESENTATIVE_PATH_COLORS = [
-  "#0f766e",
-  "#c2410c",
-  "#7c3aed",
-  "#0369a1",
-  "#a16207",
-  "#be185d",
+const REPRESENTATIVE_PATH_DASHES = [
+  [],
+  [8, 3],
+  [2, 3],
+  [10, 3, 2, 3],
+  [1, 2],
+  [6, 2, 1, 2],
 ] as const;
 
 export interface PathChartProps {
@@ -266,8 +266,9 @@ export function PathChart({
         count: Math.min(count, path.length),
         xForIndex,
         yForValue,
-        color: REPRESENTATIVE_PATH_COLORS[index],
-        width: 1.35,
+        color: COLORS.representativePaths[index],
+        width: 1.6,
+        dash: [...REPRESENTATIVE_PATH_DASHES[index]],
       });
     });
 
@@ -333,10 +334,10 @@ export function PathChart({
       context.arc(markerX, markerY, 7, 0, Math.PI * 2);
       context.fillStyle = COLORS.paper;
       context.fill();
-      context.strokeStyle = REPRESENTATIVE_PATH_COLORS[index];
+      context.strokeStyle = COLORS.representativePaths[index];
       context.lineWidth = 1.5;
       context.stroke();
-      context.fillStyle = REPRESENTATIVE_PATH_COLORS[index];
+      context.fillStyle = COLORS.representativePaths[index];
       context.fillText(String(index + 1).padStart(2, "0"), markerX, markerY);
     });
 

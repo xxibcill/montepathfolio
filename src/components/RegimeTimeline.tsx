@@ -78,10 +78,24 @@ export function RegimeTimeline() {
             Illustrative normalized market history with hidden regime bands
           </title>
           <desc id="regime-timeline-svg-description">
-            A normalized price line from 2018 to 2025 appears over colored bull,
-            bear, and sideways regime bands. This sample demonstrates the JSON
-            contract and is not fitted to live data.
+            A normalized price line from 2018 to 2025 appears over patterned and
+            colored bull, bear, and sideways regime bands. This sample demonstrates
+            the JSON contract and is not fitted to live data.
           </desc>
+          <defs>
+            <pattern id="regime-pattern-bull" width="12" height="12" patternUnits="userSpaceOnUse">
+              <rect className="regime-pattern__base regime-pattern__base--bull" width="12" height="12" />
+              <path className="regime-pattern__mark" d="M-3 12 12-3M3 15 15 3" />
+            </pattern>
+            <pattern id="regime-pattern-bear" width="10" height="10" patternUnits="userSpaceOnUse">
+              <rect className="regime-pattern__base regime-pattern__base--bear" width="10" height="10" />
+              <path className="regime-pattern__mark" d="M0 0 10 10M10 0 0 10" />
+            </pattern>
+            <pattern id="regime-pattern-sideways" width="10" height="10" patternUnits="userSpaceOnUse">
+              <rect className="regime-pattern__base regime-pattern__base--sideways" width="10" height="10" />
+              <circle className="regime-pattern__dot" cx="5" cy="5" r="1.7" />
+            </pattern>
+          </defs>
           {segments.map((segment, index) => {
             const x = Math.max(0, segment.start * stepWidth - stepWidth / 2);
             const end = Math.min(
@@ -148,6 +162,27 @@ export function RegimeTimeline() {
             JSON contract; replace it with fitted observations in production.
           </span>
         </figcaption>
+        <details className="regime-timeline__data">
+          <summary>Read the regime sequence as text</summary>
+          <div>
+            <table>
+              <caption>Illustrative regime segments in chronological order</caption>
+              <thead>
+                <tr><th>Segment</th><th>Start</th><th>End</th><th>State</th></tr>
+              </thead>
+              <tbody>
+                {segments.map((segment, index) => (
+                  <tr key={`${segment.state}-data-${index}`}>
+                    <td>{index + 1}</td>
+                    <td>{history[segment.start]?.date}</td>
+                    <td>{history[segment.end]?.date}</td>
+                    <td>{REGIME_LABELS[segment.state]}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
       </figure>
     </section>
   );
