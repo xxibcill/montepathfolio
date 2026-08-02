@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { getLesson, isKnownLesson, LABS, LESSONS } from "./catalog";
-import { runLesson } from "./lesson-runners";
+import { runLesson } from "./lesson-runner-registry";
 import { LESSON_DATA_ATTACHMENT_CONTRACT } from "./lesson-worker-protocol";
 import type { LessonDefinition, LessonOutput } from "./lesson-types";
 

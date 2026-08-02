@@ -6,10 +6,16 @@ export async function validateAccessibilityContracts(cdp, origin) {
     cdp,
     `${origin}#/labs/portfolio-projection/accumulation`,
   );
+  await disableMotionForAudit(cdp);
+  await cdp.call("Emulation.setEmulatedMedia", {
+    media: "screen",
+    features: [{ name: "prefers-color-scheme", value: "light" }],
+  });
   await evaluate(
     cdp,
-    `localStorage.setItem('montepathfolio/theme', 'dark'); document.documentElement.dataset.theme = 'dark'`,
+    `localStorage.setItem('montepathfolio/theme', 'dark'); document.documentElement.dataset.theme = 'dark'; document.documentElement.style.colorScheme = 'dark'`,
   );
+  await waitForVisualStability(cdp);
   await assertContrast(
     cdp,
     '.model-selector__option[data-selected="true"]',
@@ -25,6 +31,7 @@ export async function validateAccessibilityContracts(cdp, origin) {
     "selected model detail",
   );
   await evaluate(cdp, `document.querySelector('.control__number')?.focus()`);
+  await waitForVisualStability(cdp);
   await assertContrast(
     cdp,
     ".control__number",
@@ -48,6 +55,7 @@ export async function validateAccessibilityContracts(cdp, origin) {
     4.5,
     "selected comparison heading",
   );
+  await validateTouchTargets(cdp, "portfolio projection");
 
   await navigateAndValidate(cdp, `${origin}#/labs/risk/var-cvar`);
   await assertContrast(
@@ -77,29 +85,68 @@ export async function validateAccessibilityContracts(cdp, origin) {
   );
   await attachCsv(cdp);
   await waitForSelector(cdp, ".dataset-import__file button");
-  await cdp.call("Emulation.setTouchEmulationEnabled", {
-    enabled: true,
-    maxTouchPoints: 5,
-  });
-  const targets = await evaluate(
-    cdp,
-    `Array.from(document.querySelectorAll('.theme-toggle, .icon-button, .chapter-back, .chapter-nav a, .dataset-import__file button')).map((element) => {
-      const rect = element.getBoundingClientRect();
-      return { label: element.getAttribute('aria-label') || element.textContent.trim(), width: rect.width, height: rect.height };
-    })`,
-  );
-  const undersized = targets.filter(
-    (target) => target.width < 44 || target.height < 44,
-  );
-  if (undersized.length > 0) {
-    throw new Error(`Touch targets below 44px: ${JSON.stringify(undersized)}`);
-  }
-  await cdp.call("Emulation.setTouchEmulationEnabled", { enabled: false });
+  await validateTouchTargets(cdp, "advanced lesson");
 
   await navigateAndValidate(cdp, `${origin}#/labs/risk/not-a-lesson`);
   const canonicalHash = await evaluate(cdp, "location.hash");
   if (canonicalHash !== "#/labs/risk/var-cvar") {
     throw new Error(`Unknown lesson did not canonicalize: ${canonicalHash}`);
+  }
+
+  await cdp.call("Emulation.setEmulatedMedia", { media: "" });
+}
+
+async function disableMotionForAudit(cdp) {
+  await evaluate(
+    cdp,
+    `(() => {
+      const style = document.createElement('style');
+      style.id = 'accessibility-audit-disable-motion';
+      style.textContent = '*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}';
+      document.head.append(style);
+    })()`,
+  );
+}
+
+async function waitForVisualStability(cdp) {
+  await evaluate(
+    cdp,
+    `new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))`,
+  );
+}
+
+async function validateTouchTargets(cdp, pageLabel) {
+  await cdp.call("Emulation.setTouchEmulationEnabled", {
+    enabled: true,
+    maxTouchPoints: 5,
+  });
+  try {
+    await waitForVisualStability(cdp);
+    const targets = await evaluate(
+      cdp,
+      `Array.from(document.querySelectorAll('a[href], button, input:not([type="hidden"]), select, summary'))
+        .map((element) => {
+          const rect = element.getBoundingClientRect();
+          const style = getComputedStyle(element);
+          return {
+            label: element.getAttribute('aria-label') || element.getAttribute('title') || element.labels?.[0]?.textContent?.trim() || element.textContent.trim() || element.tagName.toLowerCase(),
+            width: rect.width,
+            height: rect.height,
+            visible: style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 1 && rect.height > 1,
+          };
+        })
+        .filter((target) => target.visible)`,
+    );
+    const undersized = targets.filter(
+      (target) => target.width < 44 || target.height < 44,
+    );
+    if (undersized.length > 0) {
+      throw new Error(
+        `${pageLabel} touch targets below 44px: ${JSON.stringify(undersized)}`,
+      );
+    }
+  } finally {
+    await cdp.call("Emulation.setTouchEmulationEnabled", { enabled: false });
   }
 }
 

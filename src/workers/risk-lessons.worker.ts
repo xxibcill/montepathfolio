@@ -1,10 +1,4 @@
-import { runBacktestingLesson, runVarLesson } from "../labs/lesson-runners";
-import { defineLessonRunners } from "./lesson-worker-registry";
+import { riskLessonRunners } from "../labs/risk-lesson-runners";
 import { registerLessonRunners } from "./register-lesson-worker";
 
-const runners = defineLessonRunners<"risk">({
-  "var-cvar": runVarLesson,
-  "risk-backtesting": runBacktestingLesson,
-});
-
-registerLessonRunners(runners);
+registerLessonRunners(riskLessonRunners);

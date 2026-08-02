@@ -20,7 +20,10 @@ export class AppErrorBoundary extends Component<
       <main className="app-shell fatal-error" tabIndex={-1}>
         <p className="eyebrow">Page recovery</p>
         <h1>This laboratory could not be displayed.</h1>
-        <p>The current page hit an unexpected error. Your locally saved inputs remain available.</p>
+        <p>
+          The current page hit an unexpected error. Previously saved inputs, if
+          any, are unchanged.
+        </p>
         <div>
           <a href="#/">Return to the laboratory index</a>
           <button type="button" onClick={() => window.location.reload()}>

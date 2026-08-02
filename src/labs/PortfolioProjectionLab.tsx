@@ -118,7 +118,12 @@ function PortfolioProjectionLab() {
           </div>
         </header>
 
-        <main id="main-content" ref={mainRef} tabIndex={-1}>
+        <main
+          id="main-content"
+          ref={mainRef}
+          tabIndex={-1}
+          data-route-key="portfolio-projection/accumulation"
+        >
           <section className="opening">
             <div className="opening__kicker">
               <span>Regime-switching planning lab</span>

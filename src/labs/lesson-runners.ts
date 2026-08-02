@@ -130,39 +130,6 @@ export interface LessonRunRequest {
   readonly calibrationSnapshot?: LessonCalibrationSnapshot;
 }
 
-const runners: Readonly<Record<string, LessonRunner>> = {
-  "jump-diffusion": runJumpDiffusionLesson,
-  garch: runGarchLesson,
-  "historical-bootstrap": runBootstrapLesson,
-  "retirement-sequence": runRetirementLesson,
-  "regime-calibration": runRegimeLesson,
-  "student-t": runStudentTLesson,
-  copulas: runCopulaLesson,
-  "composite-market": runCompositeLesson,
-  "var-cvar": runVarLesson,
-  "risk-backtesting": runBacktestingLesson,
-  "mean-variance": runMeanVarianceLesson,
-  capm: runCapmLesson,
-  "factor-models": runFactorLesson,
-  "risk-parity": runRiskParityLesson,
-  kelly: runKellyLesson,
-  "black-litterman": runBlackLittermanLesson,
-  "black-scholes": runBlackScholesLesson,
-  "binomial-tree": runBinomialLesson,
-  "monte-carlo-options": runMonteCarloOptionLesson,
-  heston: runHestonLesson,
-  "strategy-builder": runStrategyLesson,
-  vasicek: runVasicekLesson,
-  cir: runCirLesson,
-  "nelson-siegel": runNelsonSiegelLesson,
-  "hazard-credit": runHazardLesson,
-  "merton-credit": runMertonCreditLesson,
-  "ornstein-uhlenbeck": runOuLesson,
-  "order-book": runOrderBookLesson,
-  "agent-market": runAgentMarketLesson,
-  "optimal-execution": runExecutionLesson,
-};
-
 const PRIMARY_CHART_AXES: Readonly<Record<string, LessonChartAxes>> = {
   "jump-diffusion": { xLabel: "Simulation step", xUnit: "months", yLabel: "Asset price", yUnit: "currency" },
   garch: { xLabel: "Simulation step", yLabel: "Conditional variance", yUnit: "return² per step" },
@@ -195,18 +162,6 @@ const PRIMARY_CHART_AXES: Readonly<Record<string, LessonChartAxes>> = {
   "agent-market": { xLabel: "Market step", yLabel: "Scenario price", yUnit: "currency" },
   "optimal-execution": { xLabel: "Execution time", xUnit: "horizon fraction", yLabel: "Shares remaining", yUnit: "shares" },
 };
-
-export function runLesson(
-  id: string,
-  values: Readonly<Record<string, number>>,
-  attachment?: LessonDataAttachment,
-  calibrationSnapshot?: LessonCalibrationSnapshot,
-): LessonOutput {
-  return runLessonWithRunners(
-    { id, values, attachment, calibrationSnapshot },
-    runners,
-  );
-}
 
 export function runLessonWithRunners(
   request: LessonRunRequest,

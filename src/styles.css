@@ -2116,23 +2116,6 @@ footer {
   }
 }
 
-@media (pointer: coarse) {
-  button,
-  input,
-  select,
-  summary,
-  a {
-    min-width: 2.75rem;
-    min-height: 2.75rem;
-  }
-
-  .theme-toggle,
-  .icon-button {
-    width: 2.75rem;
-    height: 2.75rem;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
@@ -3526,5 +3509,29 @@ footer {
 
   .assumptions-limits > .educational-notice {
     grid-column: 1;
+  }
+}
+
+@media (pointer: coarse) {
+  button,
+  input,
+  select,
+  summary,
+  a {
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+  }
+
+  .theme-toggle,
+  .icon-button {
+    width: 2.75rem;
+    height: 2.75rem;
+  }
+
+  .control__number,
+  .control__select,
+  .lesson-parameter__number input,
+  .lesson-parameter--choice select {
+    min-height: 2.75rem;
   }
 }

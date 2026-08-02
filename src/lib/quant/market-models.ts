@@ -201,6 +201,9 @@ export function runMertonJumpDiffusion(
   validateJumpInput(input);
   const lower = factorCorrelationMatrix(input.correlation);
   const random = createSemanticRandom(input.execution.seed, input.contract);
+  const jumpCompensations = input.jumps.map((jump, index) =>
+    calculateJumpCompensation(jump, `jumps.${index}`),
+  );
   const sampleCount = Math.min(input.execution.samplePaths ?? 24, input.execution.paths);
   const sampledPricePaths: PriceSeries[][] = [];
   const terminalPrices: PriceSeries[] = [];
@@ -245,20 +248,23 @@ export function runMertonJumpDiffusion(
                 eventIndex,
               );
         }
-        const expectedJumpMultiplier =
-          Math.exp(jump.meanLogJump + 0.5 * jump.logJumpVolatility ** 2) - 1;
         const logGrowth =
           (asset.annualDrift -
             0.5 * asset.annualVolatility ** 2 -
-            jump.annualIntensity * expectedJumpMultiplier) *
+            jumpCompensations[assetIndex]) *
             input.execution.stepYears +
           asset.annualVolatility * Math.sqrt(input.execution.stepYears) * shocks[assetIndex] +
           aggregateLogJump;
-        prices[assetIndex] *= Math.exp(logGrowth);
         assertFiniteSimulationValue(
+          logGrowth,
+          `sampledLogGrowth.${pathIndex}.${assetIndex}.${stepIndex}`,
+          "Jump-diffusion log growth overflowed. Reduce the horizon, volatility, or jump size.",
+        );
+        prices[assetIndex] *= Math.exp(logGrowth);
+        assertPositiveFiniteSimulationValue(
           prices[assetIndex],
           `terminalPrices.${pathIndex}.${assetIndex}`,
-          "Jump-diffusion price overflowed. Reduce the horizon, volatility, or jump size.",
+          "Jump-diffusion price overflowed or underflowed. Reduce the horizon, volatility, or jump size.",
         );
         path[assetIndex].push(prices[assetIndex]);
         peaks[assetIndex] = Math.max(peaks[assetIndex], prices[assetIndex]);
@@ -914,6 +920,11 @@ export function runCompositeMarket(
   validateCompositeInput(input);
   const dimension = input.initialPrices.length;
   const random = createSemanticRandom(input.execution.seed, input.contract);
+  const jumpCompensations = input.enabled.jumps
+    ? input.jumps.map((jump, index) =>
+        calculateJumpCompensation(jump, `jumps.${index}`),
+      )
+    : input.jumps.map(() => 0);
   const dependence = input.enabled.dependence
     ? factorCorrelationMatrix(input.copula.correlation)
     : Array.from({ length: dimension }, (_, row) =>
@@ -1027,20 +1038,22 @@ export function runCompositeMarket(
         const variance = variances[assetIndex];
         priorInnovations[assetIndex] = Math.sqrt(variance) * innovations[assetIndex];
         const drift = input.regimes.annualDrifts[regime][assetIndex];
-        const compensation = input.enabled.jumps
-          ? jump.annualIntensity *
-            (Math.exp(jump.meanLogJump + 0.5 * jump.logJumpVolatility ** 2) - 1)
-          : 0;
-        prices[assetIndex] *= Math.exp(
-          (drift - compensation) * input.execution.stepYears -
+        const logGrowth =
+          (drift - jumpCompensations[assetIndex]) *
+            input.execution.stepYears -
             0.5 * variance +
             priorInnovations[assetIndex] +
-            aggregateLogJump,
-        );
+            aggregateLogJump;
         assertFiniteSimulationValue(
+          logGrowth,
+          `sampledLogGrowth.${pathIndex}.${assetIndex}.${stepIndex}`,
+          "Composite market log growth overflowed. Reduce the horizon or model scale.",
+        );
+        prices[assetIndex] *= Math.exp(logGrowth);
+        assertPositiveFiniteSimulationValue(
           prices[assetIndex],
           `sampledPrices.${pathIndex}.${assetIndex}.${stepIndex}`,
-          "Composite market price overflowed. Reduce the horizon or model scale.",
+          "Composite market price overflowed or underflowed. Reduce the horizon or model scale.",
         );
         paths[assetIndex].push(prices[assetIndex]);
         variancePaths[assetIndex].push(variance);
@@ -1439,6 +1452,30 @@ function retainedJumpEventValues(
   );
 }
 
+function calculateJumpCompensation(jump: JumpSpec, path: string): number {
+  if (jump.annualIntensity === 0) return 0;
+  const expectedLogMultiplier =
+    jump.meanLogJump + 0.5 * jump.logJumpVolatility ** 2;
+  assertFiniteSimulationValue(
+    expectedLogMultiplier,
+    `${path}.expectedLogMultiplier`,
+    "Jump compensation overflowed. Reduce the jump-size parameters.",
+  );
+  const expectedJumpMultiplier = Math.expm1(expectedLogMultiplier);
+  assertFiniteSimulationValue(
+    expectedJumpMultiplier,
+    `${path}.expectedMultiplier`,
+    "Jump compensation overflowed. Reduce the jump-size parameters.",
+  );
+  const compensation = jump.annualIntensity * expectedJumpMultiplier;
+  assertFiniteSimulationValue(
+    compensation,
+    `${path}.compensation`,
+    "Jump compensation overflowed. Reduce the jump intensity or jump size.",
+  );
+  return compensation;
+}
+
 function assertRetainedValueLimit(value: number, path: string): void {
   if (!Number.isSafeInteger(value) || value > MAX_RETAINED_VALUES) {
     throw new QuantError(
@@ -1468,6 +1505,16 @@ function assertFiniteSimulationValue(
   message: string,
 ): void {
   if (!Number.isFinite(value)) {
+    throw new QuantError("NUMERICAL_FAILURE", message, path);
+  }
+}
+
+function assertPositiveFiniteSimulationValue(
+  value: number,
+  path: string,
+  message: string,
+): void {
+  if (!Number.isFinite(value) || value <= 0) {
     throw new QuantError("NUMERICAL_FAILURE", message, path);
   }
 }

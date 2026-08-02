@@ -33,7 +33,12 @@ export function LabIndex() {
       </InPageLink>
       <div className="app-shell atlas-shell">
         <LabMasthead />
-        <main id="lab-index" ref={mainRef} tabIndex={-1}>
+        <main
+          id="lab-index"
+          ref={mainRef}
+          tabIndex={-1}
+          data-route-key="home"
+        >
           <section className="atlas-opening">
             <div className="opening__kicker">
               <span>

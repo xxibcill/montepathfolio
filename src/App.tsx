@@ -12,8 +12,11 @@ const QuantLabWorkspace = lazy(() => import("./labs/QuantLabWorkspace"));
 
 function currentRoute(): LabRoute {
   const route = parseLabRoute(window.location.hash);
-  if (route.kind === "lab" && !isKnownLesson(route.lab, route.lesson)) {
-    const canonical = labHref(route.lab);
+  if (route.kind === "lab") {
+    const canonical = isKnownLesson(route.lab, route.lesson)
+      ? labHref(route.lab, route.lesson)
+      : labHref(route.lab);
+    if (window.location.hash === canonical) return route;
     window.history.replaceState(null, "", canonical);
     return parseLabRoute(canonical);
   }

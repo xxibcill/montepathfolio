@@ -36,18 +36,26 @@ export async function navigateAndValidate(cdp, url) {
   while (Date.now() < deadline) {
     const state = await evaluate(
       cdp,
-      `({
-        ready: document.readyState === 'complete',
-        title: document.title,
-        heading: document.querySelector('h1')?.textContent?.trim() ?? '',
-        main: Boolean(document.querySelector('main')),
-        fatal: Boolean(document.querySelector('.fatal-error'))
-      })`,
+      `(() => {
+        const segments = location.hash.replace(/^#[/]?/, '').split('/').filter(Boolean);
+        const locationRouteKey = segments[0] === 'labs' && segments[1] && segments[2]
+          ? segments[1] + '/' + segments[2]
+          : 'home';
+        const main = document.querySelector('main[data-route-key]');
+        return {
+          ready: document.readyState === 'complete',
+          title: document.title,
+          heading: main?.querySelector('h1')?.textContent?.trim() ?? '',
+          routeKey: main?.dataset.routeKey ?? '',
+          locationRouteKey,
+          fatal: Boolean(document.querySelector('.fatal-error'))
+        };
+      })()`,
     );
     if (state.fatal) throw new Error(`Fatal error boundary rendered at ${url}`);
     if (
       state.ready &&
-      state.main &&
+      state.routeKey === state.locationRouteKey &&
       state.heading &&
       state.title.includes("Montepathfolio")
     ) {

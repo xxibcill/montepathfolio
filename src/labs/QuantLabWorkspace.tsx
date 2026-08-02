@@ -140,7 +140,11 @@ export default function QuantLabWorkspace({
       </InPageLink>
       <div className="app-shell lab-workspace-shell">
         <LabMasthead context={`${lab.number} · ${lab.title}`} />
-        <main ref={mainRef} tabIndex={-1}>
+        <main
+          ref={mainRef}
+          tabIndex={-1}
+          data-route-key={`${labId}/${lesson.id}`}
+        >
           <section className="lab-chapter-header">
             <a className="chapter-back" href="#/">
               <ArrowLeft size={16} aria-hidden="true" /> Laboratory index

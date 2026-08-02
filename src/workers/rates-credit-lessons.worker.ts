@@ -1,19 +1,4 @@
-import {
-  runCirLesson,
-  runHazardLesson,
-  runMertonCreditLesson,
-  runNelsonSiegelLesson,
-  runVasicekLesson,
-} from "../labs/lesson-runners";
-import { defineLessonRunners } from "./lesson-worker-registry";
+import { ratesCreditLessonRunners } from "../labs/rates-credit-lesson-runners";
 import { registerLessonRunners } from "./register-lesson-worker";
 
-const runners = defineLessonRunners<"rates-credit">({
-  vasicek: runVasicekLesson,
-  cir: runCirLesson,
-  "nelson-siegel": runNelsonSiegelLesson,
-  "hazard-credit": runHazardLesson,
-  "merton-credit": runMertonCreditLesson,
-});
-
-registerLessonRunners(runners);
+registerLessonRunners(ratesCreditLessonRunners);

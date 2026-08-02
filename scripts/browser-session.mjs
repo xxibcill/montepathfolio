@@ -4,7 +4,18 @@ import { access, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { setTimeout as wait } from "node:timers/promises";
 
-export async function launchBrowser(profilePath, url) {
+const DEFAULT_BROWSER_TIMEOUT_MILLISECONDS = 10_000;
+const BROWSER_POLL_INTERVAL_MILLISECONDS = 25;
+
+export async function launchBrowser(
+  profilePath,
+  url,
+  {
+    targetUrl = url,
+    timeoutMilliseconds = DEFAULT_BROWSER_TIMEOUT_MILLISECONDS,
+    captureStandardError = false,
+  } = {},
+) {
   const browser = spawn(await findBrowser(), [
     "--headless=new",
     "--disable-gpu",
@@ -15,22 +26,48 @@ export async function launchBrowser(profilePath, url) {
     `--user-data-dir=${profilePath}`,
     url,
   ]);
-  browser.stderr.resume();
+  let standardError = "";
+  if (captureStandardError) {
+    browser.stderr.setEncoding("utf8");
+    browser.stderr.on("data", (chunk) => {
+      standardError += chunk;
+    });
+  } else {
+    browser.stderr.resume();
+  }
 
   try {
-    const port = await debuggerPort(profilePath, browser);
-    const target = await pageTarget(port, browser);
+    const port = await debuggerPort(profilePath, browser, timeoutMilliseconds);
+    const target = await pageTarget(
+      port,
+      browser,
+      targetUrl,
+      timeoutMilliseconds,
+    );
     const cdp = await connect(target.webSocketDebuggerUrl);
     return {
       browser,
       cdp,
+      get standardError() {
+        return standardError;
+      },
+      ensureRunning() {
+        ensureRunning(browser);
+      },
       async close() {
         cdp.close();
         await stopBrowser(browser);
       },
     };
   } catch (error) {
+    const exitedBeforeCleanup = browser.exitCode !== null;
     await stopBrowser(browser);
+    if (exitedBeforeCleanup && standardError) {
+      throw new Error(
+        `Chrome exited before the page became available.\n${standardError}`,
+        { cause: error },
+      );
+    }
     throw error;
   }
 }
@@ -66,9 +103,10 @@ async function findBrowser() {
   );
 }
 
-async function debuggerPort(profilePath, processHandle) {
+async function debuggerPort(profilePath, processHandle, timeoutMilliseconds) {
   const path = join(profilePath, "DevToolsActivePort");
-  for (let attempt = 0; attempt < 400; attempt += 1) {
+  const deadline = Date.now() + timeoutMilliseconds;
+  while (Date.now() < deadline) {
     ensureRunning(processHandle);
     try {
       const [port] = (await readFile(path, "utf8")).split("\n");
@@ -76,25 +114,38 @@ async function debuggerPort(profilePath, processHandle) {
     } catch {
       // Chrome is still starting.
     }
-    await wait(25);
+    await wait(BROWSER_POLL_INTERVAL_MILLISECONDS);
   }
   throw new Error("Chrome did not expose its debugging port.");
 }
 
-async function pageTarget(port, processHandle) {
-  for (let attempt = 0; attempt < 400; attempt += 1) {
+async function pageTarget(
+  port,
+  processHandle,
+  targetUrl,
+  timeoutMilliseconds,
+) {
+  const deadline = Date.now() + timeoutMilliseconds;
+  while (Date.now() < deadline) {
     ensureRunning(processHandle);
     try {
       const response = await fetch(`http://127.0.0.1:${port}/json/list`);
       const targets = await response.json();
-      const page = targets.find((target) => target.type === "page");
+      const page = targets.find(
+        (target) =>
+          target.type === "page" && (!targetUrl || target.url === targetUrl),
+      );
       if (page?.webSocketDebuggerUrl) return page;
     } catch {
       // Chrome's debugging endpoint is still starting.
     }
-    await wait(25);
+    await wait(BROWSER_POLL_INTERVAL_MILLISECONDS);
   }
-  throw new Error("Chrome did not expose a page target.");
+  throw new Error(
+    targetUrl
+      ? `Chrome did not expose the expected page target ${targetUrl}.`
+      : "Chrome did not expose a page target.",
+  );
 }
 
 function connect(url) {

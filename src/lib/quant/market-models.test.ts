@@ -174,6 +174,28 @@ describe("Merton jump diffusion", () => {
       }),
     ).toThrow(/event resource limit/);
   });
+
+  it("rejects finite jump parameters that overflow compensation", () => {
+    expect(() =>
+      runMertonJumpDiffusion({
+        ...input,
+        jumps: [
+          {
+            annualIntensity: 1e-10,
+            meanLogJump: 1_000,
+            logJumpVolatility: 0,
+          },
+        ],
+        execution: {
+          ...input.execution,
+          paths: 1,
+          steps: 1,
+          stepYears: 1,
+          samplePaths: 1,
+        },
+      }),
+    ).toThrow(/jump compensation overflowed/i);
+  });
 });
 
 describe("GARCH(1,1)", () => {
@@ -584,5 +606,26 @@ describe("sanctioned HMM → GARCH → copula → jump pipeline", () => {
         },
       }),
     ).toThrow(/event resource limit/);
+  });
+
+  it("rejects composite jump parameters that overflow compensation", () => {
+    expect(() =>
+      runCompositeMarket({
+        ...input,
+        jumps: input.jumps.map((jump) => ({
+          ...jump,
+          annualIntensity: 1e-10,
+          meanLogJump: 1_000,
+          logJumpVolatility: 0,
+        })),
+        execution: {
+          ...input.execution,
+          paths: 1,
+          steps: 1,
+          stepYears: 1,
+          samplePaths: 1,
+        },
+      }),
+    ).toThrow(/jump compensation overflowed/i);
   });
 });
